@@ -173,9 +173,7 @@ async function changePassword() {
 function saveFinnhubKey() {
   const k = document.getElementById('setFinnhub').value.trim();
   if (!k) { showToast('INFO','No key','Paste your Finnhub API key first'); return; }
-  localStorage.setItem('finnhub_key', k);
-  const session = getSession();
-  if (session) { const users=getUsers(); if(users[session.username]){users[session.username].finnhubKey=k; saveUsers(users);} }
+  persistKey(k); // shared helper — saves to localStorage AND user profile
   showToast('INFO','✅ API key saved','US stock data will use this key on next load');
 }
 

@@ -209,17 +209,22 @@ async function fetchCrypto() {
 }
 
 // ── FETCH FINNHUB (US STOCKS) ───────────────────────
-function getKey() { return localStorage.getItem('finnhub_key') || ''; }
+function getKey() { return (localStorage.getItem('finnhub_key') || '').trim(); }
 
-function saveKey() {
-  const k = document.getElementById('keyInput')?.value.trim();
-  if (!k) { showToast('INFO','No key entered','Paste your Finnhub key first'); return; }
+function persistKey(k) {
+  if (!k) return;
   localStorage.setItem('finnhub_key', k);
   const session = getSession();
   if (session) {
     const users = getUsers();
     if (users[session.username]) { users[session.username].finnhubKey = k; saveUsers(users); }
   }
+}
+
+function saveKey() {
+  const k = document.getElementById('keyInput')?.value.trim();
+  if (!k) { showToast('INFO','No key entered','Paste your Finnhub key first'); return; }
+  persistKey(k);
   const banner = document.getElementById('keyBanner');
   if (banner) banner.style.display = 'none';
   showToast('INFO','✅ Key saved','Loading US stock data…');
@@ -229,8 +234,11 @@ function saveKey() {
 async function fetchFinnhubQuote(sym, token) {
   try {
     const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${token}`);
+    // Distinguish auth failure (bad key) from other errors (rate limit, network)
+    if (r.status === 401 || r.status === 403) return { _badKey: true };
     if (!r.ok) return null;
     const d = await r.json();
+    if (d?.error) return { _badKey: true };
     return d.c > 0 ? d : null;
   } catch { return null; }
 }
@@ -271,13 +279,26 @@ async function fetchAllStocks() {
   if (banner) banner.style.display = 'none';
 
   const quotes = await Promise.all(US_SYMS.map(s => fetchFinnhubQuote(s, token)));
+  const badKey = quotes.some(q => q?._badKey);
   TSP.usData = US_SYMS.map((s,i) => normalizeStock(s, quotes[i])).filter(Boolean);
 
-  if (!TSP.usData.length) {
-    showToast('INFO','⚠ Invalid API key','Check your Finnhub key and try again');
+  if (badKey) {
+    // Definitely an auth error — clear the bad key so user can re-enter
+    localStorage.removeItem('finnhub_key');
+    const session = getSession();
+    if (session) { const u=getUsers(); if(u[session.username]){u[session.username].finnhubKey='';saveUsers(u);} }
+    showToast('INFO','⚠ Invalid API key','Check your Finnhub key in Settings → API Keys');
     const banner = document.getElementById('keyBanner');
     if (banner) banner.style.display = 'flex';
     needKey('usTable');
+    return;
+  }
+
+  if (!TSP.usData.length) {
+    // All quotes failed but no auth error — likely rate limited, don't clear the key
+    showToast('INFO','⚠ US data unavailable','Finnhub rate limited — retrying on next refresh');
+    const el = document.getElementById('usTable');
+    if (el && !el.querySelector('table')) el.innerHTML = `<div class="loading" style="color:var(--amber)">⚠ Finnhub rate limited — will retry automatically</div>`;
     return;
   }
 
@@ -705,12 +726,21 @@ function loginUser(username, finnhubKey) {
   document.querySelectorAll('.user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.user-name').forEach(el => el.textContent = username);
 
-  if (finnhubKey) {
-    localStorage.setItem('finnhub_key', finnhubKey);
+  // Use profile key if available; otherwise keep whatever is already in localStorage.
+  // Never delete an existing key just because the profile entry is empty.
+  const profileKey  = (finnhubKey || '').trim();
+  const storedKey   = (localStorage.getItem('finnhub_key') || '').trim();
+  const resolvedKey = profileKey || storedKey;
+
+  if (resolvedKey) {
+    localStorage.setItem('finnhub_key', resolvedKey);
+    // Sync back to user profile if the profile was missing it
+    if (!profileKey && resolvedKey) {
+      const users = getUsers();
+      if (users[username]) { users[username].finnhubKey = resolvedKey; saveUsers(users); }
+    }
     const banner = document.getElementById('keyBanner');
     if (banner) banner.style.display = 'none';
-  } else {
-    localStorage.removeItem('finnhub_key');
   }
 
   // Restore saved notification preference for this user
@@ -728,7 +758,9 @@ function loginUser(username, finnhubKey) {
 
 function doLogout() {
   sessionStorage.removeItem(SES_KEY);
-  localStorage.removeItem('finnhub_key');
+  // Do NOT remove finnhub_key from localStorage — it is tied to the account
+  // profile and will be re-validated on next login. Clearing it here caused
+  // the key to disappear every time the user signed out and back in.
   const overlay = document.getElementById('loginScreen');
   if (overlay) overlay.style.display = 'flex';
   ['lUser','lPass'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
