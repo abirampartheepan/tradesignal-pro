@@ -2,7 +2,8 @@
    TradeSignal Pro — Professional Financial Terminal
    ═══════════════════════════════════════════════════ */
 
-:root {
+/* ── DARK THEME (default) ── */
+:root, [data-theme="dark"] {
   --bg:       #060b14;
   --s1:       #0b1220;
   --s2:       #0f1928;
@@ -28,6 +29,40 @@
   --gold:     #c49a2e;
   --radius:   4px;
   --sidebar:  220px;
+  --shadow:   0 2px 12px rgba(0,0,0,.4);
+}
+
+/* ── LIGHT THEME ── */
+[data-theme="light"] {
+  --bg:       #f0ede8;
+  --s1:       #ffffff;
+  --s2:       #f7f5f2;
+  --s3:       #ede9e3;
+  --border:   #d8d2c8;
+  --border2:  #c4bcb0;
+  --text:     #1a2332;
+  --text2:    #4a5a70;
+  --text3:    #8a96a8;
+  --green:    #1a7a42;
+  --gbg:      rgba(26,122,66,.07);
+  --gborder:  rgba(26,122,66,.25);
+  --red:      #b02820;
+  --rbg:      rgba(176,40,32,.07);
+  --rborder:  rgba(176,40,32,.25);
+  --amber:    #956e10;
+  --abg:      rgba(149,110,16,.07);
+  --aborder:  rgba(149,110,16,.25);
+  --blue:     #1a5f9a;
+  --acbg:     rgba(26,95,154,.07);
+  --acborder: rgba(26,95,154,.25);
+  --accent:   #1a6bbf;
+  --gold:     #956e10;
+  --shadow:   0 2px 12px rgba(0,0,0,.1);
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition: background-color .2s ease, border-color .2s ease, color .15s ease;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -743,6 +778,57 @@ body {
 }
 
 .key-link:hover { background: var(--acbg); }
+
+/* ── THEME TOGGLE ── */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  transition: border-color .15s, color .15s;
+  white-space: nowrap;
+}
+
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+.theme-toggle-track {
+  width: 28px; height: 15px;
+  background: var(--border2);
+  border-radius: 10px;
+  position: relative;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+
+[data-theme="light"] .theme-toggle-track { background: var(--accent); }
+
+.theme-toggle-thumb {
+  width: 11px; height: 11px;
+  background: #fff;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px; left: 2px;
+  transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+
+[data-theme="light"] .theme-toggle-thumb { transform: translateX(13px); }
+
+/* Light mode specific overrides */
+[data-theme="light"] .data-tbl th { background: var(--s3); }
+[data-theme="light"] .panel-head  { background: var(--s3); }
+[data-theme="light"] .sidebar     { box-shadow: 2px 0 8px rgba(0,0,0,.08); }
+[data-theme="light"] .topbar      { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+[data-theme="light"] .modal       { box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+[data-theme="light"] .login-panel { box-shadow: 0 8px 40px rgba(0,0,0,.12); }
+[data-theme="light"] .toast       { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
 
 /* ── UTIL COLORS ── */
 .g { color: var(--green); }

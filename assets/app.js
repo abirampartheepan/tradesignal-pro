@@ -671,10 +671,34 @@ function renderSidebar(activePage) {
           <div class="user-role">Trader</div>
         </div>
       </div>
+      <button class="theme-toggle" onclick="toggleTheme()" style="width:calc(100% - 36px);margin:0 18px 8px;border-radius:4px;justify-content:flex-start;gap:10px" title="Toggle light/dark">
+        <div class="theme-toggle-track"><div class="theme-toggle-thumb"></div></div>
+        <span class="theme-label">${(localStorage.getItem('tsp_theme')||'dark') === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
+      </button>
       <button class="logout-btn" onclick="doLogout()">Sign Out</button>
     </div>
   </aside>`;
 }
+
+// ── THEME TOGGLE ─────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('tsp_theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('tsp_theme', next);
+  // Update all toggle button labels
+  document.querySelectorAll('.theme-label').forEach(el => {
+    el.textContent = next === 'dark' ? 'Dark' : 'Light';
+  });
+}
+
+// Run immediately so there's no flash of wrong theme
+initTheme();
 
 // ── SHARED TOPBAR HTML ───────────────────────────────
 function renderTopbar(title) {
@@ -685,6 +709,10 @@ function renderTopbar(title) {
       <div class="market-status"><div class="status-dot"></div> Live Data</div>
     </div>
     <div class="topbar-right">
+      <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+        <div class="theme-toggle-track"><div class="theme-toggle-thumb"></div></div>
+        <span class="theme-label">${(localStorage.getItem('tsp_theme')||'dark') === 'dark' ? 'Dark' : 'Light'}</span>
+      </button>
       <button class="topbar-btn" id="notifBtn" onclick="toggleNotifications()">🔔 Alerts</button>
       <button class="topbar-btn" onclick="refreshPage()" id="refreshBtn">⟳ Refresh</button>
       <span class="countdown" id="countdown">60s</span>
