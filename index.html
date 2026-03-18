@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradeSignal Pro | Live Market Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #070d19; --bg2: #0d1526; --card: #111c32; --card2: #162040;
+      --border: #1e2d4a; --text: #e2e8f0; --muted: #64748b;
+      --green: #00d084; --green-dim: rgba(0,208,132,0.12);
+      --red: #ff4d6a; --red-dim: rgba(255,77,106,0.12);
+      --yellow: #ffb000; --blue: #4d9fff; --purple: #a78bfa;
+      --glow: 0 0 24px rgba(77,159,255,0.15);
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; }
+
+    /* HEADER */
+    .header { background:var(--bg2); border-bottom:1px solid var(--border); padding:12px 24px; display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; z-index:100; }
+    .header-left { display:flex; align-items:center; gap:12px; }
+    .logo { font-size:20px; font-weight:800; background:linear-gradient(135deg,#4d9fff,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .live-badge { background:var(--green); color:#000; font-size:10px; font-weight:800; padding:2px 8px; border-radius:20px; animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .header-right { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
+    .btn { background:var(--card2); border:1px solid var(--border); color:var(--text); padding:6px 14px; border-radius:8px; cursor:pointer; font-size:12px; transition:all 0.2s; }
+    .btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
+    .btn.on { background:var(--green-dim); border-color:var(--green); color:var(--green); }
+    .market-status { display:flex; gap:10px; }
+    .mkt { display:flex; align-items:center; gap:5px; font-size:11px; }
+    .dot { width:6px; height:6px; border-radius:50%; }
+    .dot-green { background:var(--green); } .dot-red { background:var(--red); }
+
+    /* NAV */
+    .nav { background:var(--bg2); border-bottom:1px solid var(--border); display:flex; padding:0 24px; gap:2px; overflow-x:auto; }
+    .nav-tab { padding:12px 18px; cursor:pointer; color:var(--muted); font-size:13px; font-weight:500; border-bottom:2px solid transparent; transition:all 0.2s; white-space:nowrap; }
+    .nav-tab:hover { color:var(--text); }
+    .nav-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+
+    /* LAYOUT */
+    .main { padding:24px; max-width:1400px; margin:0 auto; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+
+    /* SUMMARY CARDS */
+    .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:24px; }
+    .summary-card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; }
+    .summary-card .lbl { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+    .summary-card .val { font-size:26px; font-weight:700; }
+    .summary-card .sub { color:var(--muted); font-size:11px; margin-top:3px; }
+
+    /* SECTION HEADER */
+    .sec-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+    .sec-title { font-size:16px; font-weight:600; }
+    .sec-badge { font-size:11px; color:var(--muted); background:var(--card2); padding:4px 10px; border-radius:20px; }
+
+    /* TABLE */
+    .data-table { background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden; margin-bottom:24px; overflow-x:auto; }
+    .data-table table { width:100%; border-collapse:collapse; min-width:600px; }
+    .data-table th { background:var(--card2); padding:10px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); font-weight:600; white-space:nowrap; }
+    .data-table td { padding:11px 14px; border-top:1px solid var(--border); vertical-align:middle; }
+    .data-table tr:hover td { background:var(--card2); }
+
+    /* ASSET */
+    .asset-row { display:flex; align-items:center; gap:10px; }
+    .asset-ico { width:30px; height:30px; border-radius:50%; background:var(--card2); display:flex; align-items:center; justify-content:center; font-size:13px; overflow:hidden; flex-shrink:0; }
+    .asset-ico img { width:30px; height:30px; border-radius:50%; }
+    .aname { font-weight:600; font-size:13px; }
+    .asym { color:var(--muted); font-size:11px; }
+
+    /* CHANGE */
+    .up { color:var(--green); } .dn { color:var(--red); } .neu { color:var(--muted); }
+
+    /* SIGNAL BADGE */
+    .sig { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; white-space:nowrap; }
+    .sig-sb { background:rgba(0,208,132,0.15); color:#00d084; border:1px solid rgba(0,208,132,0.35); }
+    .sig-b  { background:rgba(52,211,153,0.12); color:#34d399; border:1px solid rgba(52,211,153,0.3); }
+    .sig-h  { background:rgba(255,176,0,0.12);  color:#ffb000; border:1px solid rgba(255,176,0,0.3); }
+    .sig-s  { background:rgba(255,77,106,0.12); color:#ff4d6a; border:1px solid rgba(255,77,106,0.3); }
+    .sig-ss { background:rgba(220,38,38,0.18);  color:#ff2d55; border:1px solid rgba(220,38,38,0.4); }
+
+    /* RSI BAR */
+    .rsi-wrap { display:flex; align-items:center; gap:6px; }
+    .rsi-track { width:56px; height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+    .rsi-fill { height:100%; border-radius:2px; transition:width 0.3s; }
+    .rsi-num { font-size:11px; color:var(--muted); width:28px; }
+
+    /* LOADING / ERROR */
+    .loading { text-align:center; padding:36px; color:var(--muted); }
+    .spinner { width:28px; height:28px; border:3px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 10px; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .err-box { background:rgba(255,77,106,0.1); border:1px solid rgba(255,77,106,0.3); border-radius:8px; padding:10px 14px; color:var(--red); font-size:12px; margin-bottom:14px; }
+
+    /* TOP MOVERS GRID */
+    .movers-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:24px; }
+    .mover-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; transition:all 0.2s; }
+    .mover-card:hover { border-color:var(--blue); box-shadow:var(--glow); }
+    .mover-card.up { border-left:3px solid var(--green); }
+    .mover-card.dn { border-left:3px solid var(--red); }
+    .mover-name { font-size:12px; font-weight:600; margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .mover-price { font-size:15px; font-weight:700; margin-bottom:3px; }
+    .mover-change { font-size:13px; font-weight:600; }
+
+    /* ALERTS */
+    .alerts-panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px; margin-bottom:24px; }
+    .alert-item { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+    .alert-item:last-child { border-bottom:none; }
+    .alert-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .alert-text { flex:1; font-size:12px; }
+    .alert-time { font-size:11px; color:var(--muted); }
+
+    /* PORTFOLIO */
+    .port-grid { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+    @media(max-width:768px){ .port-grid{grid-template-columns:1fr} }
+    .panel { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; }
+    .panel h3 { font-size:14px; font-weight:600; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--border); }
+    .form-row { display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:8px; margin-bottom:10px; }
+    @media(max-width:600px){ .form-row{grid-template-columns:1fr 1fr} }
+    .finput { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:8px 12px; color:var(--text); font-size:13px; width:100%; }
+    .finput:focus { outline:none; border-color:var(--blue); }
+    .finput::placeholder { color:var(--muted); }
+    .btn-add { background:var(--blue); color:#fff; border:none; border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600; white-space:nowrap; }
+    .btn-rm { background:transparent; border:none; color:var(--red); cursor:pointer; font-size:18px; line-height:1; padding:2px 6px; }
+    .port-item { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border); }
+    .port-item:last-child { border-bottom:none; }
+    .port-item-l { display:flex; align-items:center; gap:9px; }
+    .port-dot { width:9px; height:9px; border-radius:50%; }
+    .port-item-name { font-weight:600; font-size:13px; }
+    .port-item-det { font-size:11px; color:var(--muted); }
+    .port-item-r { text-align:right; }
+    .port-item-aud { font-weight:600; font-size:13px; }
+    .port-total { margin-top:14px; padding-top:14px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+    .port-total-lbl { color:var(--muted); font-size:12px; }
+    .port-total-val { font-size:22px; font-weight:700; }
+    .chart-wrap { position:relative; height:280px; display:flex; align-items:center; justify-content:center; }
+
+    /* DISCLAIMER */
+    .disclaimer { background:rgba(255,176,0,0.05); border:1px solid rgba(255,176,0,0.2); border-radius:8px; padding:12px 16px; font-size:11px; color:var(--muted); margin-top:24px; line-height:1.6; }
+    .disclaimer strong { color:var(--yellow); }
+
+    @media(max-width:768px){ .main{padding:14px} }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">TradeSignal Pro</div>
+    <span class="live-badge">LIVE</span>
+    <div class="market-status" id="mktStatus"></div>
+  </div>
+  <div class="header-right">
+    <span id="lastUpdated">Loading...</span>
+    <span id="countdown" style="color:var(--blue);font-weight:600;">60s</span>
+    <button class="btn" id="notifyBtn" onclick="toggleNotify()">🔔 Alerts Off</button>
+    <button class="btn" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-tab active"    onclick="switchTab(this,'dashboard')">📊 Dashboard</div>
+  <div class="nav-tab"           onclick="switchTab(this,'crypto')">₿ Crypto</div>
+  <div class="nav-tab"           onclick="switchTab(this,'us')">🇺🇸 US Stocks</div>
+  <div class="nav-tab"           onclick="switchTab(this,'aus')">🇦🇺 ASX Stocks</div>
+  <div class="nav-tab"           onclick="switchTab(this,'portfolio')">💼 Portfolio</div>
+</nav>
+
+<div class="main">
+
+  <!-- ═══════════ DASHBOARD ═══════════ -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="summary-grid" id="summaryCards">
+      <div class="summary-card"><div class="lbl">Loading</div><div class="spinner" style="margin-top:6px"></div></div>
+    </div>
+
+    <div class="sec-hdr">
+      <div class="sec-title">🔥 Top Movers (24h)</div>
+      <div class="sec-badge" id="moversBadge">Loading…</div>
+    </div>
+    <div class="movers-grid" id="topMovers">
+      <div class="loading"><div class="spinner"></div>Fetching data…</div>
+    </div>
+
+    <div class="sec-hdr">
+      <div class="sec-title">⚡ Active Buy Signals</div>
+      <div class="sec-badge">Best opportunities right now</div>
+    </div>
+    <div class="data-table">
+      <table>
+        <thead><tr><th>Asset</th><th>Price (AUD)</th><th>24h</th><th>7d</th><th>RSI</th><th>Signal</th></tr></thead>
+        <tbody id="buySignals"><tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="sec-hdr"><div class="sec-title">🔔 Alert History</div></div>
+    <div class="alerts-panel"><div id="alertsList"><div style="color:var(--muted);font-size:12px;text-align:center;padding:16px;">Enable notifications to receive real-time buy/sell alerts</div></div></div>
+  </div>
+
+  <!-- ═══════════ CRYPTO ═══════════ -->
+  <div id="tab-crypto" class="tab-content">
+    <div class="sec-hdr">
+      <div class="sec-title">Top 20 Cryptocurrencies</div>
+      <div class="sec-badge">CoinGecko API • AUD prices</div>
+    </div>
+    <div class="data-table">
+      <table>
+        <thead><tr><th>#</th><th>Coin</th><th>Price (AUD)</th><th>1h %</th><th>24h %</th><th>7d %</th><th>Market Cap</th><th>Volume 24h</th><th>Signal</th></tr></thead>
+        <tbody id="cryptoTbl"><tr><td colspan="9" class="loading"><div class="spinner"></div>Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════ US STOCKS ═══════════ -->
+  <div id="tab-us" class="tab-content">
+    <div class="sec-hdr">
+      <div class="sec-title">Top US Stocks</div>
+      <div class="sec-badge">NYSE / NASDAQ • USD → AUD</div>
+    </div>
+    <div id="usErr"></div>
+    <div class="data-table">
+      <table>
+        <thead><tr><th>Symbol</th><th>Company</th><th>Price (USD)</th><th>Price (AUD)</th><th>24h %</th><th>52w High</th><th>52w Low</th><th>RSI</th><th>Signal</th></tr></thead>
+        <tbody id="usTbl"><tr><td colspan="9" class="loading"><div class="spinner"></div>Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════ ASX ═══════════ -->
+  <div id="tab-aus" class="tab-content">
+    <div class="sec-hdr">
+      <div class="sec-title">Top ASX Stocks</div>
+      <div class="sec-badge">Australian Securities Exchange • AUD</div>
+    </div>
+    <div id="ausErr"></div>
+    <div class="data-table">
+      <table>
+        <thead><tr><th>Symbol</th><th>Company</th><th>Price (AUD)</th><th>24h %</th><th>52w High</th><th>52w Low</th><th>RSI</th><th>Signal</th></tr></thead>
+        <tbody id="ausTbl"><tr><td colspan="8" class="loading"><div class="spinner"></div>Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════ PORTFOLIO ═══════════ -->
+  <div id="tab-portfolio" class="tab-content">
+    <div class="sec-hdr">
+      <div class="sec-title">💼 Portfolio Calculator</div>
+      <div class="sec-badge">Live P&L • Saved locally</div>
+    </div>
+
+    <!-- ADD FORM -->
+    <div class="panel" style="margin-bottom:20px">
+      <h3>Add Holding</h3>
+      <div class="form-row">
+        <input class="finput" id="pSym" placeholder="Symbol (BTC, AAPL, BHP.AX, ETH…)" />
+        <input class="finput" id="pQty" type="number" placeholder="Quantity" min="0" step="any" />
+        <input class="finput" id="pBuy" type="number" placeholder="Buy Price (AUD)" min="0" step="any" />
+        <button class="btn-add" onclick="addHolding()">+ Add</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">Tip: Use symbols that match crypto/stock lists above so live P&L updates automatically.</div>
+    </div>
+
+    <div class="port-grid">
+      <!-- HOLDINGS -->
+      <div class="panel">
+        <h3>Holdings</h3>
+        <div id="holdList"><div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">No holdings yet — add some above!</div></div>
+        <div class="port-total" id="portTotal" style="display:none">
+          <div>
+            <div class="port-total-lbl">Total Portfolio Value</div>
+            <div id="portPnlLbl" style="font-size:11px;margin-top:2px"></div>
+          </div>
+          <div class="port-total-val" id="portTotalVal">$0.00</div>
+        </div>
+      </div>
+
+      <!-- PIE CHART -->
+      <div class="panel">
+        <h3>Allocation Breakdown</h3>
+        <div class="chart-wrap">
+          <canvas id="portChart"></canvas>
+          <div id="noChartMsg" style="position:absolute;color:var(--muted);font-size:12px;">Add holdings to see chart</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PERFORMANCE TABLE -->
+    <div class="data-table" id="portTableWrap" style="display:none;margin-top:4px">
+      <table>
+        <thead><tr><th>Asset</th><th>Qty</th><th>Buy Price</th><th>Current Price</th><th>Value (AUD)</th><th>P&L (AUD)</th><th>P&L %</th><th>Signal</th><th></th></tr></thead>
+        <tbody id="portTblBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="disclaimer">
+    <strong>⚠️ Educational & Informational Use Only — Not Financial Advice.</strong>
+    Signals are generated using RSI and price momentum indicators. These are tools, not guarantees.
+    Short-term trading is highly speculative — you may lose your entire investment.
+    Always do your own research (DYOR) and consult a licensed financial adviser before investing.
+    Past performance does not predict future results. This tool is for personal use only.
+  </div>
+</div><!-- /main -->
+
+<script>
+// ════════════════════════════════════════════════
+//  CONFIG
+// ════════════════════════════════════════════════
+const CG_BASE   = 'https://api.coingecko.com/api/v3';
+const PROXY     = 'https://corsproxy.io/?';
+const YF_BASE   = 'https://query1.finance.yahoo.com';
+const FX_API    = 'https://open.er-api.com/v6/latest/USD';
+
+const US_STOCKS = [
+  {symbol:'NVDA',  name:'NVIDIA'},
+  {symbol:'AAPL',  name:'Apple'},
+  {symbol:'MSFT',  name:'Microsoft'},
+  {symbol:'TSLA',  name:'Tesla'},
+  {symbol:'META',  name:'Meta'},
+  {symbol:'AMZN',  name:'Amazon'},
+  {symbol:'GOOGL', name:'Alphabet'},
+  {symbol:'AMD',   name:'AMD'},
+  {symbol:'PLTR',  name:'Palantir'},
+  {symbol:'COIN',  name:'Coinbase'},
+];
+
+const AUS_STOCKS = [
+  {symbol:'BHP.AX', name:'BHP Group'},
+  {symbol:'CBA.AX', name:'Commonwealth Bank'},
+  {symbol:'ANZ.AX', name:'ANZ Bank'},
+  {symbol:'WBC.AX', name:'Westpac'},
+  {symbol:'NAB.AX', name:'NAB'},
+  {symbol:'CSL.AX', name:'CSL Limited'},
+  {symbol:'WES.AX', name:'Wesfarmers'},
+  {symbol:'RIO.AX', name:'Rio Tinto'},
+  {symbol:'MQG.AX', name:'Macquarie Group'},
+  {symbol:'FMG.AX', name:'Fortescue'},
+];
+
+const COLORS = [
+  '#4d9fff','#a78bfa','#00d084','#ff4d6a','#ffb000',
+  '#f97316','#ec4899','#06b6d4','#84cc16','#14b8a6',
+  '#f43f5e','#22c55e','#d946ef','#8b5cf6','#fb923c'
+];
+
+// ════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════
+let allAssets       = [];
+let portfolio       = JSON.parse(localStorage.getItem('ts_portfolio') || '[]');
+let alertHistory    = JSON.parse(localStorage.getItem('ts_alerts')    || '[]').map(a=>({...a,time:new Date(a.time)}));
+let notifyOn        = false;
+let audUsdRate      = 1.57;  // default: 1 USD = ~1.57 AUD
+let portChart       = null;
+let countdownSecs   = 60;
+let countdownHandle = null;
+const prevSignals   = {};
+
+// ════════════════════════════════════════════════
+//  FORMATTERS
+// ════════════════════════════════════════════════
+function fmt(n, d=2) {
+  if (n===null||n===undefined||isNaN(n)) return '—';
+  return n.toLocaleString('en-AU',{minimumFractionDigits:d,maximumFractionDigits:d});
+}
+function fmtAUD(n) {
+  if (n===null||n===undefined||isNaN(n)) return '—';
+  if (n>=1e9) return '$'+fmt(n/1e9)+'B';
+  if (n>=1e6) return '$'+fmt(n/1e6)+'M';
+  if (n>=1000) return '$'+fmt(n);
+  return '$'+fmt(n, n<1?6:2);
+}
+function chClass(v) { return v>0?'up':v<0?'dn':'neu'; }
+function chStr(v) {
+  if (v===null||v===undefined||isNaN(v)) return '—';
+  return (v>0?'+':'')+fmt(v)+'%';
+}
+function timeAgo(d) {
+  const s=Math.floor((Date.now()-d)/1000);
+  if(s<60) return s+'s ago';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  return Math.floor(s/3600)+'h ago';
+}
+
+// ════════════════════════════════════════════════
+//  RSI
+// ════════════════════════════════════════════════
+function calcRSI(prices, period=14) {
+  const p = prices.filter(x=>x!==null&&!isNaN(x));
+  if (p.length < period+1) return null;
+  let g=0, l=0;
+  for (let i=1;i<=period;i++) { const d=p[i]-p[i-1]; d>0?g+=d:l+=Math.abs(d); }
+  let ag=g/period, al=l/period;
+  for (let i=period+1;i<p.length;i++) {
+    const d=p[i]-p[i-1];
+    ag=(ag*(period-1)+Math.max(0,d))/period;
+    al=(al*(period-1)+Math.max(0,-d))/period;
+  }
+  if (al===0) return 100;
+  return Math.round(100-(100/(1+ag/al)));
+}
+
+// ════════════════════════════════════════════════
+//  SIGNAL
+// ════════════════════════════════════════════════
+function signal(rsi, ch24, ch7) {
+  let score=0;
+  if (rsi!==null&&rsi!==undefined) {
+    if      (rsi<25) score+=4;
+    else if (rsi<35) score+=2;
+    else if (rsi<45) score+=1;
+    else if (rsi>75) score-=4;
+    else if (rsi>65) score-=2;
+    else if (rsi>55) score-=1;
+  }
+  if (ch24!==null&&ch24!==undefined) {
+    if      (ch24>8)  score+=2;
+    else if (ch24>3)  score+=1;
+    else if (ch24<-8) score-=2;
+    else if (ch24<-3) score-=1;
+  }
+  if (ch7!==null&&ch7!==undefined) {
+    if      (ch7>15)  score+=1;
+    else if (ch7<-15) score-=1;
+  }
+  if (score>=4) return {lbl:'STRONG BUY', cls:'sig-sb', icon:'🚀', score};
+  if (score>=2) return {lbl:'BUY',         cls:'sig-b',  icon:'📈', score};
+  if (score<=-4) return {lbl:'STRONG SELL',cls:'sig-ss', icon:'🔴', score};
+  if (score<=-2) return {lbl:'SELL',        cls:'sig-s',  icon:'📉', score};
+  return {lbl:'HOLD', cls:'sig-h', icon:'⏸', score};
+}
+
+function sigBadge(rsi,ch24,ch7) {
+  const s=signal(rsi,ch24,ch7);
+  return `<span class="sig ${s.cls}">${s.icon} ${s.lbl}</span>`;
+}
+
+function rsiBar(rsi) {
+  if (rsi===null) return '<span style="color:var(--muted);font-size:11px">—</span>';
+  const c = rsi<30?'var(--green)':rsi>70?'var(--red)':'var(--yellow)';
+  return `<div class="rsi-wrap"><div class="rsi-track"><div class="rsi-fill" style="width:${rsi}%;background:${c}"></div></div><span class="rsi-num">${rsi}</span></div>`;
+}
+
+// ════════════════════════════════════════════════
+//  NOTIFICATIONS
+// ════════════════════════════════════════════════
+async function toggleNotify() {
+  if (!('Notification' in window)) { alert('Browser does not support notifications.'); return; }
+  if (!notifyOn) {
+    const perm = await Notification.requestPermission();
+    if (perm==='granted') {
+      notifyOn=true;
+      document.getElementById('notifyBtn').textContent='🔔 Alerts On';
+      document.getElementById('notifyBtn').classList.add('on');
+      sendPush('TradeSignal Pro','Alerts enabled! You\'ll be notified of buy/sell signals.');
+    } else {
+      alert('Permission denied. Please allow notifications in your browser settings.');
+    }
+  } else {
+    notifyOn=false;
+    document.getElementById('notifyBtn').textContent='🔔 Alerts Off';
+    document.getElementById('notifyBtn').classList.remove('on');
+  }
+}
+
+function sendPush(title, body) {
+  if (!notifyOn||Notification.permission!=='granted') return;
+  const n=new Notification(title,{body,tag:title+body});
+  n.onclick=()=>{window.focus();n.close();};
+  setTimeout(()=>n.close(),8000);
+}
+
+function pushAlert(text, color) {
+  alertHistory.unshift({text,color,time:new Date()});
+  if (alertHistory.length>60) alertHistory=alertHistory.slice(0,60);
+  localStorage.setItem('ts_alerts',JSON.stringify(alertHistory.map(a=>({...a,time:a.time.toISOString()}))));
+  renderAlerts();
+  if (notifyOn) sendPush('TradeSignal Pro',text);
+}
+
+function renderAlerts() {
+  const el=document.getElementById('alertsList');
+  if (!alertHistory.length) {
+    el.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:16px">No alerts yet. Enable notifications above.</div>';
+    return;
+  }
+  el.innerHTML=alertHistory.slice(0,15).map(a=>`
+    <div class="alert-item">
+      <div class="alert-dot" style="background:${a.color}"></div>
+      <div class="alert-text">${a.text}</div>
+      <div class="alert-time">${timeAgo(a.time)}</div>
+    </div>
+  `).join('');
+}
+
+// ════════════════════════════════════════════════
+//  MARKET STATUS
+// ════════════════════════════════════════════════
+function updateMarketStatus() {
+  const now=new Date();
+  const d=now.getUTCDay(), h=now.getUTCHours(), m=now.getUTCMinutes();
+  const t=h*60+m, wk=d>=1&&d<=5;
+  const nyseOpen = wk && t>=870 && t<1260;
+  const asxOpen  = wk && (t>=1380||t<360);
+  document.getElementById('mktStatus').innerHTML=`
+    <div class="mkt"><div class="dot ${nyseOpen?'dot-green':'dot-red'}"></div>NYSE</div>
+    <div class="mkt"><div class="dot ${asxOpen?'dot-green':'dot-red'}"></div>ASX</div>
+    <div class="mkt"><div class="dot dot-green"></div>Crypto</div>
+  `;
+}
+
+// ════════════════════════════════════════════════
+//  FETCH AUD/USD RATE
+// ════════════════════════════════════════════════
+async function fetchFX() {
+  try {
+    const r=await fetch(FX_API);
+    if (r.ok) { const d=await r.json(); if (d.rates?.AUD) audUsdRate=d.rates.AUD; }
+  } catch(e) { /* use default */ }
+}
+
+// ════════════════════════════════════════════════
+//  FETCH CRYPTO
+// ════════════════════════════════════════════════
+async function fetchCrypto() {
+  try {
+    const url=`${CG_BASE}/coins/markets?vs_currency=aud&order=market_cap_desc&per_page=20&page=1&sparkline=false&price_change_percentage=1h,24h,7d`;
+    const r=await fetch(url);
+    if (!r.ok) throw new Error('CoinGecko '+r.status);
+    const data=await r.json();
+    return data.map(c=>({
+      id:c.id, symbol:c.symbol.toUpperCase(), name:c.name, image:c.image,
+      price:c.current_price, priceAUD:c.current_price,
+      ch1h:c.price_change_percentage_1h_in_currency,
+      ch24:c.price_change_percentage_24h,
+      ch7:c.price_change_percentage_7d_in_currency,
+      cap:c.market_cap, vol:c.total_volume, rank:c.market_cap_rank,
+      rsi:null, type:'crypto'
+    }));
+  } catch(e) { console.error('Crypto:',e); return []; }
+}
+
+// ════════════════════════════════════════════════
+//  FETCH SINGLE STOCK via Yahoo Finance + CORS proxy
+// ════════════════════════════════════════════════
+async function fetchStock(symbol, name) {
+  const isAUD = symbol.endsWith('.AX');
+  try {
+    const yfUrl=`${YF_BASE}/v8/finance/chart/${symbol}?interval=1d&range=30d`;
+    const url=`${PROXY}${encodeURIComponent(yfUrl)}`;
+    const r=await fetch(url);
+    if (!r.ok) throw new Error('YF '+r.status);
+    const data=await r.json();
+    const res=data.chart.result[0];
+    const meta=res.meta;
+    const closes=res.indicators.quote[0].close;
+    const price=meta.regularMarketPrice;
+    const prevClose=meta.previousClose||meta.chartPreviousClose;
+    const ch24=prevClose?((price-prevClose)/prevClose)*100:null;
+    const c7ago=closes.length>=7?closes[closes.length-7]:null;
+    const ch7=c7ago?((price-c7ago)/c7ago)*100:null;
+    const rsi=calcRSI(closes);
+    const priceAUD=isAUD?price:price*audUsdRate;
+    return {
+      symbol, name, price, priceAUD,
+      currency:isAUD?'AUD':'USD',
+      ch24, ch7, rsi,
+      high52:meta['52WeekHigh'], low52:meta['52WeekLow'],
+      type:isAUD?'aus-stock':'us-stock'
+    };
+  } catch(e) { console.error('Stock '+symbol+':',e); return null; }
+}
+
+// ════════════════════════════════════════════════
+//  RENDER CRYPTO TABLE
+// ════════════════════════════════════════════════
+function renderCrypto(coins) {
+  const el=document.getElementById('cryptoTbl');
+  if (!coins.length) { el.innerHTML='<tr><td colspan="9" style="padding:16px;color:var(--muted)">Failed to load. Check internet / try refresh.</td></tr>'; return; }
+  el.innerHTML=coins.map(c=>`
+    <tr>
+      <td style="color:var(--muted)">${c.rank}</td>
+      <td><div class="asset-row">
+        <div class="asset-ico"><img src="${c.image}" alt="" onerror="this.parentElement.textContent='₿'"></div>
+        <div><div class="aname">${c.name}</div><div class="asym">${c.symbol}</div></div>
+      </div></td>
+      <td><strong>${fmtAUD(c.price)}</strong></td>
+      <td class="${chClass(c.ch1h)}">${chStr(c.ch1h)}</td>
+      <td class="${chClass(c.ch24)}">${chStr(c.ch24)}</td>
+      <td class="${chClass(c.ch7)}">${chStr(c.ch7)}</td>
+      <td style="color:var(--muted)">${fmtAUD(c.cap)}</td>
+      <td style="color:var(--muted)">${fmtAUD(c.vol)}</td>
+      <td>${sigBadge(c.rsi,c.ch24,c.ch7)}</td>
+    </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════
+//  RENDER US STOCKS
+// ════════════════════════════════════════════════
+function renderUS(stocks) {
+  const el=document.getElementById('usTbl');
+  const err=document.getElementById('usErr');
+  if (!stocks.length) {
+    err.innerHTML='<div class="err-box">⚠️ Stock data requires a CORS proxy (corsproxy.io). If loading fails, the proxy may be rate-limited — try again in 60s. Crypto data is always available.</div>';
+    el.innerHTML='<tr><td colspan="9" style="padding:16px;color:var(--muted)">No stock data loaded.</td></tr>';
+    return;
+  }
+  err.innerHTML='';
+  el.innerHTML=stocks.map(s=>`
+    <tr>
+      <td><strong>${s.symbol}</strong></td>
+      <td style="color:var(--muted)">${s.name}</td>
+      <td><strong>$${fmt(s.price)}</strong></td>
+      <td style="color:var(--muted)">${fmtAUD(s.priceAUD)}</td>
+      <td class="${chClass(s.ch24)}">${chStr(s.ch24)}</td>
+      <td style="color:var(--muted)">$${fmt(s.high52)}</td>
+      <td style="color:var(--muted)">$${fmt(s.low52)}</td>
+      <td>${rsiBar(s.rsi)}</td>
+      <td>${sigBadge(s.rsi,s.ch24,s.ch7)}</td>
+    </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════
+//  RENDER ASX STOCKS
+// ════════════════════════════════════════════════
+function renderAUS(stocks) {
+  const el=document.getElementById('ausTbl');
+  if (!stocks.length) { el.innerHTML='<tr><td colspan="8" style="padding:16px;color:var(--muted)">No data loaded.</td></tr>'; return; }
+  document.getElementById('ausErr').innerHTML='';
+  el.innerHTML=stocks.map(s=>`
+    <tr>
+      <td><strong>${s.symbol.replace('.AX','')}</strong></td>
+      <td style="color:var(--muted)">${s.name}</td>
+      <td><strong>${fmtAUD(s.price)}</strong></td>
+      <td class="${chClass(s.ch24)}">${chStr(s.ch24)}</td>
+      <td style="color:var(--muted)">${fmtAUD(s.high52)}</td>
+      <td style="color:var(--muted)">${fmtAUD(s.low52)}</td>
+      <td>${rsiBar(s.rsi)}</td>
+      <td>${sigBadge(s.rsi,s.ch24,s.ch7)}</td>
+    </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════
+//  RENDER DASHBOARD
+// ════════════════════════════════════════════════
+function renderDashboard(cryptos, usStocks, ausStocks) {
+  allAssets=[
+    ...cryptos.map(c=>({...c,displayName:c.name,displaySym:c.symbol})),
+    ...usStocks.map(s=>({...s,displayName:s.name,displaySym:s.symbol})),
+    ...ausStocks.map(s=>({...s,displayName:s.name,displaySym:s.symbol.replace('.AX','')}))
+  ];
+
+  const total=allAssets.length;
+  const buys=allAssets.filter(a=>{ const s=signal(a.rsi,a.ch24,a.ch7); return s.score>=2; }).length;
+  const sells=allAssets.filter(a=>{ const s=signal(a.rsi,a.ch24,a.ch7); return s.score<=-2; }).length;
+  const valid=allAssets.filter(a=>a.ch24!==null&&!isNaN(a.ch24));
+  const avgCh=valid.length?valid.reduce((s,a)=>s+a.ch24,0)/valid.length:0;
+  const sorted=[...valid].sort((a,b)=>b.ch24-a.ch24);
+  const gainer=sorted[0], loser=sorted[sorted.length-1];
+
+  document.getElementById('summaryCards').innerHTML=`
+    <div class="summary-card"><div class="lbl">Assets Tracked</div><div class="val" style="color:var(--blue)">${total}</div><div class="sub">Crypto + US + ASX</div></div>
+    <div class="summary-card"><div class="lbl">Buy Signals</div><div class="val" style="color:var(--green)">${buys}</div><div class="sub">Out of ${total} tracked</div></div>
+    <div class="summary-card"><div class="lbl">Sell Signals</div><div class="val" style="color:var(--red)">${sells}</div><div class="sub">Consider reducing exposure</div></div>
+    <div class="summary-card"><div class="lbl">Avg 24h Change</div><div class="val ${chClass(avgCh)}">${chStr(avgCh)}</div><div class="sub">Across all ${total} assets</div></div>
+    <div class="summary-card"><div class="lbl">🏆 Top Gainer</div><div class="val" style="color:var(--green);font-size:15px">${gainer?.displayName||'—'}</div><div class="sub ${chClass(gainer?.ch24)}">${chStr(gainer?.ch24)}</div></div>
+    <div class="summary-card"><div class="lbl">📉 Top Loser</div><div class="val" style="color:var(--red);font-size:15px">${loser?.displayName||'—'}</div><div class="sub ${chClass(loser?.ch24)}">${chStr(loser?.ch24)}</div></div>
+  `;
+
+  // Top movers
+  const movers=[...valid].sort((a,b)=>Math.abs(b.ch24)-Math.abs(a.ch24)).slice(0,12);
+  document.getElementById('moversBadge').textContent=`${movers.length} assets • refreshes in ${countdownSecs}s`;
+  document.getElementById('topMovers').innerHTML=movers.map(a=>`
+    <div class="mover-card ${a.ch24>=0?'up':'dn'}">
+      <div class="mover-name">${a.displayName}</div>
+      <div class="mover-price">${fmtAUD(a.priceAUD)}</div>
+      <div class="mover-change ${chClass(a.ch24)}">${chStr(a.ch24)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">${a.displaySym}</div>
+    </div>`).join('');
+
+  // Buy signals table
+  const buyList=[...allAssets]
+    .filter(a=>signal(a.rsi,a.ch24,a.ch7).score>=2)
+    .sort((a,b)=>signal(b.rsi,b.ch24,b.ch7).score - signal(a.rsi,a.ch24,a.ch7).score)
+    .slice(0,10);
+
+  if (!buyList.length) {
+    document.getElementById('buySignals').innerHTML='<tr><td colspan="6" style="padding:16px;color:var(--muted);text-align:center">No strong buy signals detected at this time</td></tr>';
+  } else {
+    document.getElementById('buySignals').innerHTML=buyList.map(a=>{
+      const sig=signal(a.rsi,a.ch24,a.ch7);
+      const typeLabel=a.type==='crypto'?'Crypto':a.type==='us-stock'?'US Stock':'ASX';
+      return `<tr>
+        <td><div class="asset-row">
+          ${a.image?`<div class="asset-ico"><img src="${a.image}" alt="" onerror="this.parentElement.textContent='•'"></div>`:''}
+          <div><div class="aname">${a.displayName}</div><div class="asym">${a.displaySym} • ${typeLabel}</div></div>
+        </div></td>
+        <td><strong>${fmtAUD(a.priceAUD)}</strong></td>
+        <td class="${chClass(a.ch24)}">${chStr(a.ch24)}</td>
+        <td class="${chClass(a.ch7)}">${chStr(a.ch7)}</td>
+        <td>${rsiBar(a.rsi)}</td>
+        <td><span class="sig ${sig.cls}">${sig.icon} ${sig.lbl}</span></td>
+      </tr>`;}).join('');
+  }
+
+  // Check for new signals vs last time and push alerts
+  allAssets.forEach(a=>{
+    const sig=signal(a.rsi,a.ch24,a.ch7);
+    const key=a.displaySym;
+    if (prevSignals[key]!==undefined && prevSignals[key]!==sig.lbl) {
+      if (sig.lbl==='STRONG BUY')
+        pushAlert(`🚀 STRONG BUY: ${a.displayName} (${a.displaySym}) — ${chStr(a.ch24)} today`,'var(--green)');
+      else if (sig.lbl==='BUY')
+        pushAlert(`📈 BUY Signal: ${a.displayName} (${a.displaySym}) — ${chStr(a.ch24)} today`,'#34d399');
+      else if (sig.lbl==='STRONG SELL')
+        pushAlert(`🔴 STRONG SELL: ${a.displayName} (${a.displaySym}) — ${chStr(a.ch24)} today`,'var(--red)');
+    }
+    prevSignals[key]=sig.lbl;
+  });
+}
+
+// ════════════════════════════════════════════════
+//  PORTFOLIO
+// ════════════════════════════════════════════════
+function getLivePrice(sym) {
+  const s=sym.toUpperCase();
+  const a=allAssets.find(x=>
+    x.symbol?.toUpperCase()===s ||
+    x.displaySym?.toUpperCase()===s ||
+    x.id?.toUpperCase()===s
+  );
+  return a?(a.priceAUD||a.price):null;
+}
+
+function getLiveSignal(sym) {
+  const s=sym.toUpperCase();
+  const a=allAssets.find(x=>x.symbol?.toUpperCase()===s||x.displaySym?.toUpperCase()===s||x.id?.toUpperCase()===s);
+  return a?signal(a.rsi,a.ch24,a.ch7):null;
+}
+
+function addHolding() {
+  const sym=document.getElementById('pSym').value.trim().toUpperCase();
+  const qty=parseFloat(document.getElementById('pQty').value);
+  const buy=parseFloat(document.getElementById('pBuy').value);
+  if (!sym||isNaN(qty)||qty<=0||isNaN(buy)||buy<=0) { alert('Please fill all fields with valid values.'); return; }
+  portfolio.push({sym,qty,buy,added:new Date().toISOString()});
+  localStorage.setItem('ts_portfolio',JSON.stringify(portfolio));
+  document.getElementById('pSym').value='';
+  document.getElementById('pQty').value='';
+  document.getElementById('pBuy').value='';
+  renderPortfolio();
+}
+
+function removeHolding(i) {
+  portfolio.splice(i,1);
+  localStorage.setItem('ts_portfolio',JSON.stringify(portfolio));
+  renderPortfolio();
+}
+
+function renderPortfolio() {
+  const listEl=document.getElementById('holdList');
+  const totalEl=document.getElementById('portTotal');
+  const tableWrap=document.getElementById('portTableWrap');
+
+  if (!portfolio.length) {
+    listEl.innerHTML='<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">No holdings yet — add some above!</div>';
+    totalEl.style.display='none';
+    tableWrap.style.display='none';
+    renderPortChart([]);
+    return;
+  }
+
+  let totalVal=0, totalCost=0;
+  const items=portfolio.map((h,i)=>{
+    const lp=getLivePrice(h.sym);
+    const val=lp?lp*h.qty:h.buy*h.qty;
+    const cost=h.buy*h.qty;
+    const pnl=lp?val-cost:null;
+    const pnlPct=pnl!==null?(pnl/cost)*100:null;
+    totalVal+=val; totalCost+=cost;
+    return {...h,lp,val,cost,pnl,pnlPct,idx:i};
+  });
+
+  const totalPnl=totalVal-totalCost;
+  const totalPnlPct=(totalPnl/totalCost)*100;
+
+  listEl.innerHTML=items.map((h,i)=>`
+    <div class="port-item">
+      <div class="port-item-l">
+        <div class="port-dot" style="background:${COLORS[i%COLORS.length]}"></div>
+        <div>
+          <div class="port-item-name">${h.sym}</div>
+          <div class="port-item-det">${fmt(h.qty,4)} @ ${fmtAUD(h.buy)}</div>
+        </div>
+      </div>
+      <div class="port-item-r">
+        <div class="port-item-aud">${fmtAUD(h.val)}</div>
+        <div style="font-size:11px" class="${h.pnl!==null?chClass(h.pnl):''}">${h.pnl!==null?(h.pnl>=0?'+':'')+fmtAUD(h.pnl):'Price N/A'}</div>
+      </div>
+    </div>`).join('');
+
+  totalEl.style.display='flex';
+  document.getElementById('portTotalVal').textContent=fmtAUD(totalVal);
+  document.getElementById('portPnlLbl').innerHTML=`
+    <span class="${chClass(totalPnl)}">${totalPnl>=0?'+':''}${fmtAUD(totalPnl)} (${chStr(totalPnlPct)})</span>
+    <span style="color:var(--muted)"> vs cost ${fmtAUD(totalCost)}</span>`;
+
+  tableWrap.style.display='block';
+  document.getElementById('portTblBody').innerHTML=items.map(h=>{
+    const sig=getLiveSignal(h.sym);
+    return `<tr>
+      <td><strong>${h.sym}</strong></td>
+      <td>${fmt(h.qty,4)}</td>
+      <td>${fmtAUD(h.buy)}</td>
+      <td>${h.lp?fmtAUD(h.lp):'<span style="color:var(--muted)">Unknown</span>'}</td>
+      <td><strong>${fmtAUD(h.val)}</strong></td>
+      <td class="${h.pnl!==null?chClass(h.pnl):''}">${h.pnl!==null?(h.pnl>=0?'+':'')+fmtAUD(h.pnl):'—'}</td>
+      <td class="${h.pnlPct!==null?chClass(h.pnlPct):''}">${h.pnlPct!==null?chStr(h.pnlPct):'—'}</td>
+      <td>${sig?`<span class="sig ${sig.cls}">${sig.icon} ${sig.lbl}</span>`:'—'}</td>
+      <td><button class="btn-rm" onclick="removeHolding(${h.idx})">×</button></td>
+    </tr>`;}).join('');
+
+  renderPortChart(items);
+}
+
+function renderPortChart(items) {
+  if (portChart) { portChart.destroy(); portChart=null; }
+  const canvas=document.getElementById('portChart');
+  const noMsg=document.getElementById('noChartMsg');
+  if (!items.length) { noMsg.style.display='block'; return; }
+  noMsg.style.display='none';
+  portChart=new Chart(canvas,{
+    type:'doughnut',
+    data:{
+      labels:items.map(h=>h.sym),
+      datasets:[{
+        data:items.map(h=>+h.val.toFixed(2)),
+        backgroundColor:items.map((_,i)=>COLORS[i%COLORS.length]),
+        borderColor:'#111c32', borderWidth:3, hoverOffset:10
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'right',labels:{color:'#e2e8f0',font:{size:12},padding:12,boxWidth:12}},
+        tooltip:{callbacks:{label:ctx=>{
+          const tot=ctx.dataset.data.reduce((a,b)=>a+parseFloat(b),0);
+          const pct=((ctx.raw/tot)*100).toFixed(1);
+          return ` ${ctx.label}: ${fmtAUD(parseFloat(ctx.raw))} (${pct}%)`;
+        }}}
+      }
+    }
+  });
+}
+
+// ════════════════════════════════════════════════
+//  NAVIGATION
+// ════════════════════════════════════════════════
+function switchTab(el, tab) {
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  el.classList.add('active');
+}
+
+// ════════════════════════════════════════════════
+//  COUNTDOWN
+// ════════════════════════════════════════════════
+function startCountdown() {
+  if (countdownHandle) clearInterval(countdownHandle);
+  countdownSecs=60;
+  countdownHandle=setInterval(()=>{
+    countdownSecs--;
+    document.getElementById('countdown').textContent=countdownSecs+'s';
+    if (countdownSecs<=0) refreshAll();
+  },1000);
+}
+
+// ════════════════════════════════════════════════
+//  MAIN REFRESH
+// ════════════════════════════════════════════════
+async function refreshAll() {
+  document.getElementById('lastUpdated').textContent='Updating…';
+  updateMarketStatus();
+  startCountdown();
+
+  // Fetch crypto immediately (fast, single call)
+  const cryptoPromise=fetchCrypto();
+
+  // Fetch stocks in small batches to avoid proxy overload
+  async function batchStocks(list) {
+    const results=[];
+    for (let i=0;i<list.length;i+=5) {
+      const batch=list.slice(i,i+5);
+      const res=await Promise.all(batch.map(s=>fetchStock(s.symbol,s.name)));
+      results.push(...res.filter(Boolean));
+      if (i+5<list.length) await new Promise(r=>setTimeout(r,300));
+    }
+    return results;
+  }
+
+  const [cryptos,[usStocks,ausStocks]]=await Promise.all([
+    cryptoPromise,
+    Promise.all([batchStocks(US_STOCKS),batchStocks(AUS_STOCKS)])
+  ]);
+
+  renderCrypto(cryptos);
+  renderUS(usStocks);
+  renderAUS(ausStocks);
+  renderDashboard(cryptos,usStocks,ausStocks);
+  renderPortfolio();
+  renderAlerts();
+
+  document.getElementById('lastUpdated').textContent=`Updated ${new Date().toLocaleTimeString('en-AU')}`;
+}
+
+// ════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async()=>{
+  renderAlerts();
+  await fetchFX();
+  await refreshAll();
+});
+</script>
+</body>
+</html>
