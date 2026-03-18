@@ -200,6 +200,63 @@
     .tab.on { background:var(--blue-bg); border-color:rgba(74,158,255,.4); color:var(--accent); }
     .tab:hover:not(.on) { color:var(--txt2); border-color:var(--border); }
 
+    /* LOGIN OVERLAY */
+    .login-overlay {
+      position:fixed; inset:0; z-index:9999;
+      background:var(--bg);
+      display:flex; align-items:center; justify-content:center;
+    }
+    .login-box {
+      background:var(--bg3); border:1px solid var(--border);
+      border-radius:20px; padding:48px 44px; width:100%; max-width:420px;
+      box-shadow:0 32px 80px rgba(0,0,0,.6);
+    }
+    .login-logo {
+      font-size:28px; font-weight:900; color:var(--accent);
+      text-align:center; margin-bottom:6px;
+    }
+    .login-logo span { color:var(--green); }
+    .login-sub { text-align:center; color:var(--txt3); font-size:13px; margin-bottom:32px; }
+    .login-tabs { display:flex; gap:0; margin-bottom:28px; background:var(--bg2); border-radius:10px; padding:4px; }
+    .login-tab {
+      flex:1; text-align:center; padding:9px; border-radius:8px;
+      font-size:13px; font-weight:600; cursor:pointer; color:var(--txt3); transition:.2s;
+    }
+    .login-tab.on { background:var(--accent); color:#fff; }
+    .login-field { margin-bottom:16px; }
+    .login-field label { display:block; font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+    .login-field input {
+      width:100%; background:var(--bg2); border:1px solid var(--border); color:var(--txt);
+      padding:12px 14px; border-radius:10px; font-size:14px; outline:none; transition:.2s;
+    }
+    .login-field input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(74,158,255,.15); }
+    .login-field .field-hint { font-size:11px; color:var(--txt3); margin-top:5px; }
+    .login-btn {
+      width:100%; padding:13px; background:var(--accent); color:#fff;
+      border:none; border-radius:10px; font-size:15px; font-weight:700;
+      cursor:pointer; margin-top:8px; transition:.2s;
+    }
+    .login-btn:hover { background:#3a8eef; }
+    .login-err {
+      background:var(--red-bg); border:1px solid var(--red-border); color:var(--red);
+      padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; display:none;
+    }
+    .login-ok {
+      background:var(--green-bg); border:1px solid var(--green-border); color:var(--green);
+      padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; display:none;
+    }
+    .login-footer { text-align:center; font-size:11px; color:var(--txt3); margin-top:20px; }
+    .user-pill {
+      display:flex; align-items:center; gap:8px;
+      background:var(--bg4); border:1px solid var(--border);
+      padding:6px 12px; border-radius:8px; font-size:12px; font-weight:600;
+    }
+    .user-avatar {
+      width:24px; height:24px; border-radius:50%; background:var(--accent);
+      display:flex; align-items:center; justify-content:center;
+      font-size:11px; font-weight:800; color:#fff;
+    }
+
     /* RESPONSIVE */
     @media(max-width:1100px){
       .stats-row{grid-template-columns:repeat(2,1fr);}
@@ -220,6 +277,57 @@
 </head>
 <body>
 
+<!-- LOGIN OVERLAY -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div class="login-logo">📈 TradeSignal<span>Pro</span></div>
+    <div class="login-sub">Your personal live trading dashboard</div>
+
+    <div class="login-tabs">
+      <div class="login-tab on" id="tabLogin" onclick="switchAuthTab('login')">Sign In</div>
+      <div class="login-tab" id="tabSignup" onclick="switchAuthTab('signup')">Create Account</div>
+    </div>
+
+    <div id="authErr" class="login-err"></div>
+    <div id="authOk" class="login-ok"></div>
+
+    <!-- SIGN IN FORM -->
+    <div id="formLogin">
+      <div class="login-field">
+        <label>Username</label>
+        <input type="text" id="loginUser" placeholder="Enter your username" autocomplete="username">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="loginPass" placeholder="Enter your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="login-btn" onclick="doLogin()">Sign In →</button>
+    </div>
+
+    <!-- SIGN UP FORM -->
+    <div id="formSignup" style="display:none">
+      <div class="login-field">
+        <label>Username</label>
+        <input type="text" id="signupUser" placeholder="Choose a username" autocomplete="username">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="signupPass" placeholder="Choose a password (min 6 chars)" autocomplete="new-password">
+      </div>
+      <div class="login-field">
+        <label>Finnhub API Key <span style="color:var(--txt3);font-weight:400">(optional — can add later)</span></label>
+        <input type="text" id="signupKey" placeholder="Paste your free Finnhub key…">
+        <div class="field-hint">Get a free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a> · Takes 30 seconds</div>
+      </div>
+      <button class="login-btn" onclick="doSignup()">Create Account →</button>
+    </div>
+
+    <div class="login-footer">
+      🔒 All data saved locally in your browser · Nothing sent to any server
+    </div>
+  </div>
+</div>
+
 <!-- HEADER -->
 <header class="header">
   <div class="logo">
@@ -231,6 +339,11 @@
     <button class="hbtn" id="notifBtn" onclick="toggleNotifications()">🔔 Enable Alerts</button>
     <button class="hbtn" onclick="refreshAll()" id="refreshBtn">⟳ Refresh</button>
     <span class="timer-badge" id="timerBadge">Next: 60s</span>
+    <div class="user-pill" id="userPill" style="display:none">
+      <div class="user-avatar" id="userAvatar">?</div>
+      <span id="userLabel">User</span>
+      <button onclick="doLogout()" style="background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);padding:3px 8px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:none;margin-left:4px" title="Sign out">Sign out</button>
+    </div>
   </div>
 </header>
 
@@ -922,22 +1035,154 @@ async function refreshAll(){
   setTimeout(()=>btn.textContent='⟳ Refresh',4000);
 }
 
+// ── AUTH ─────────────────────────────────────────────────
+const DB_KEY = 'tsp_users';
+const SESSION_KEY = 'tsp_session';
+
+async function hashPass(password) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function getUsers() { return JSON.parse(localStorage.getItem(DB_KEY)||'{}'); }
+function saveUsers(u) { localStorage.setItem(DB_KEY, JSON.stringify(u)); }
+function getSession() { return JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null'); }
+function setSession(u) { sessionStorage.setItem(SESSION_KEY, JSON.stringify(u)); }
+
+function switchAuthTab(tab) {
+  document.getElementById('formLogin').style.display  = tab==='login'  ? '' : 'none';
+  document.getElementById('formSignup').style.display = tab==='signup' ? '' : 'none';
+  document.getElementById('tabLogin').classList.toggle('on',  tab==='login');
+  document.getElementById('tabSignup').classList.toggle('on', tab==='signup');
+  document.getElementById('authErr').style.display='none';
+  document.getElementById('authOk').style.display='none';
+}
+
+function showAuthErr(msg) {
+  const el=document.getElementById('authErr');
+  el.textContent=msg; el.style.display='block';
+  document.getElementById('authOk').style.display='none';
+}
+function showAuthOk(msg) {
+  const el=document.getElementById('authOk');
+  el.textContent=msg; el.style.display='block';
+  document.getElementById('authErr').style.display='none';
+}
+
+async function doSignup() {
+  const user = document.getElementById('signupUser').value.trim().toLowerCase();
+  const pass = document.getElementById('signupPass').value;
+  const key  = document.getElementById('signupKey').value.trim();
+
+  if(!user) return showAuthErr('Please enter a username');
+  if(user.length < 3) return showAuthErr('Username must be at least 3 characters');
+  if(!pass || pass.length < 6) return showAuthErr('Password must be at least 6 characters');
+
+  const users = getUsers();
+  if(users[user]) return showAuthErr('Username already taken — try signing in instead');
+
+  const hash = await hashPass(pass);
+  users[user] = { hash, finnhubKey: key || '' };
+  saveUsers(users);
+
+  showAuthOk('✅ Account created! Signing you in…');
+  setTimeout(() => loginUser(user, key), 800);
+}
+
+async function doLogin() {
+  const user = document.getElementById('loginUser').value.trim().toLowerCase();
+  const pass = document.getElementById('loginPass').value;
+
+  if(!user || !pass) return showAuthErr('Please enter your username and password');
+
+  const users = getUsers();
+  if(!users[user]) return showAuthErr('Account not found — create one first');
+
+  const hash = await hashPass(pass);
+  if(hash !== users[user].hash) return showAuthErr('Incorrect password — try again');
+
+  loginUser(user, users[user].finnhubKey || '');
+}
+
+function loginUser(username, finnhubKey) {
+  setSession({ username });
+  document.getElementById('loginOverlay').style.display='none';
+
+  // Show user pill in header
+  const initials = username.slice(0,2).toUpperCase();
+  document.getElementById('userAvatar').textContent = initials;
+  document.getElementById('userLabel').textContent = username;
+  document.getElementById('userPill').style.display = 'flex';
+
+  // Auto-load their saved Finnhub key
+  if(finnhubKey) {
+    localStorage.setItem('finnhub_key', finnhubKey);
+    document.getElementById('keyBanner').style.display = 'none';
+  } else {
+    localStorage.removeItem('finnhub_key');
+  }
+
+  // Boot the dashboard
+  bootDashboard();
+  showToast('INFO',`👋 Welcome back, ${username}!`, finnhubKey ? 'Loading all markets…' : 'Enter your Finnhub key to load stocks');
+}
+
+function doLogout() {
+  sessionStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem('finnhub_key');
+  document.getElementById('userPill').style.display='none';
+  document.getElementById('loginOverlay').style.display='flex';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+  showAuthErr('');
+  document.getElementById('authErr').style.display='none';
+}
+
+// Save Finnhub key also to user profile when they save it via banner
+const _origSaveKey = saveKey;
+function saveKey() {
+  const k = document.getElementById('keyInput').value.trim();
+  if(!k){ showToast('INFO','No key entered','Paste your Finnhub API key first'); return; }
+  localStorage.setItem('finnhub_key', k);
+
+  // Also persist to user profile
+  const session = getSession();
+  if(session) {
+    const users = getUsers();
+    if(users[session.username]) {
+      users[session.username].finnhubKey = k;
+      saveUsers(users);
+    }
+  }
+  document.getElementById('keyBanner').style.display='none';
+  showToast('INFO','✅ Key saved to your profile','Loading stock data now…');
+  fetchAllStocks();
+}
+
 // ── INIT ─────────────────────────────────────────────────
-(async()=>{
-  // Default portfolio rows
+async function bootDashboard() {
   addPortRow(); addPortRow(); addPortRow();
-
-  // Fetch all data
-  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks()]);
-
-  // Countdown timer
+  await Promise.all([fetchAUD(), fetchCrypto(), fetchAllStocks(), fetchASX()]);
   setInterval(()=>{
     countdown--;
     document.getElementById('timerBadge').textContent=`Next: ${countdown}s`;
-    if(countdown<=0){refreshAll();countdown=REFRESH_SEC;}
+    if(countdown<=0){ refreshAll(); countdown=REFRESH_SEC; }
   },1000);
+}
 
-  setTimeout(()=>showToast('INFO','👋 TradeSignal Pro ready','Live data loaded · Click "Enable Alerts" for push notifications'),1000);
+(async()=>{
+  const session = getSession();
+  if(session) {
+    // Resume existing session
+    const users = getUsers();
+    const userData = users[session.username];
+    if(userData) {
+      loginUser(session.username, userData.finnhubKey || '');
+      return;
+    }
+  }
+  // Show login screen
+  document.getElementById('loginOverlay').style.display='flex';
 })();
 </script>
 </body>
