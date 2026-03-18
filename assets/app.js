@@ -256,33 +256,75 @@ async function fetchAllStocks() {
   if (typeof updateAlerts === 'function') updateAlerts();
 }
 
-// ── FETCH ASX (Yahoo Finance via proxies) ────────────
-async function fetchYahooChart(sym) {
-  const yUrl  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
-  const yUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
+// ── FETCH ASX ────────────────────────────────────────
+// Strategy: 1) Show cache instantly  2) Batch request (1 call for all 15)
+//           3) Parallel individual fallback  4) Save result to cache
+
+const ASX_CACHE_KEY = 'tsp_asx_cache';
+const ASX_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function normaliseASXStock(sym, data) {
+  if (!data || !data.regularMarketPrice) return null;
+  return {
+    symbol: sym,
+    shortName: STOCK_NAMES[sym] || sym,
+    regularMarketPrice: data.regularMarketPrice || 0,
+    regularMarketChangePercent: data.regularMarketChangePercent || 0,
+    fiftyTwoWeekHigh: data.fiftyTwoWeekHigh || data.regularMarketPrice * 1.2,
+    fiftyTwoWeekLow:  data.fiftyTwoWeekLow  || data.regularMarketPrice * 0.8,
+    marketCap: data.marketCap || null,
+    regularMarketVolume: data.regularMarketVolume || null,
+  };
+}
+
+// Try one batch request for all symbols — fast if it works
+async function fetchASXBatch() {
+  const syms = ASX_SYMS.join(',');
+  const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName`;
+  const yahooUrl2 = yahooUrl.replace('query1','query2');
   const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl2)}`,
-    `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl2)}`,
   ];
   for (const url of proxies) {
     try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const results = d?.quoteResponse?.result;
+      if (results?.length) {
+        return results.map(s => normaliseASXStock(s.symbol, s)).filter(Boolean);
+      }
+    } catch {}
+  }
+  return null;
+}
+
+// Individual chart fetch per symbol — fallback
+async function fetchASXSingle(sym) {
+  const yUrl  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
+  const yUrl2 = yUrl.replace('query1','query2');
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl2)}`,
+  ];
+  for (const url of proxies) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
       if (!r.ok) continue;
       const d = await r.json();
       const meta = d?.chart?.result?.[0]?.meta;
-      if (meta && meta.regularMarketPrice > 0) {
+      if (meta?.regularMarketPrice > 0) {
         const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
-        const chgPct = prev > 0 ? ((meta.regularMarketPrice - prev) / prev * 100) : 0;
-        return {
-          symbol: sym, shortName: STOCK_NAMES[sym] || sym,
+        return normaliseASXStock(sym, {
           regularMarketPrice: meta.regularMarketPrice,
-          regularMarketChangePercent: meta.regularMarketChangePercent || chgPct,
-          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh || meta.regularMarketPrice * 1.2,
-          fiftyTwoWeekLow:  meta.fiftyTwoWeekLow  || meta.regularMarketPrice * 0.8,
-          marketCap: null, regularMarketVolume: meta.regularMarketVolume || null,
-        };
+          regularMarketChangePercent: meta.regularMarketChangePercent || ((meta.regularMarketPrice - prev) / prev * 100),
+          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+          fiftyTwoWeekLow:  meta.fiftyTwoWeekLow,
+          regularMarketVolume: meta.regularMarketVolume,
+        });
       }
     } catch {}
   }
@@ -291,18 +333,46 @@ async function fetchYahooChart(sym) {
 
 async function fetchASX() {
   const el = document.getElementById('asxTable');
+
+  // 1. Show cached data immediately for instant load
+  try {
+    const raw = sessionStorage.getItem(ASX_CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < ASX_CACHE_TTL && data?.length) {
+        TSP.asxData = data;
+        if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
+        if (typeof updateAlerts === 'function') updateAlerts();
+        // Silently refresh in background — no spinner shown
+        fetchASXFresh(false);
+        return;
+      }
+    }
+  } catch {}
+
+  // 2. No cache — show spinner and fetch fresh
   if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching ASX data…</div>';
-  const results = [];
-  for (let i=0; i<ASX_SYMS.length; i++) {
-    results.push(fetchYahooChart(ASX_SYMS[i]));
-    if (i % 5 === 4) await new Promise(r => setTimeout(r, 300));
+  await fetchASXFresh(true);
+}
+
+async function fetchASXFresh(showErrors) {
+  // Try batch first (1 request = instant)
+  let data = await fetchASXBatch();
+
+  // Batch failed — try all 15 in full parallel (no stagger, no delays)
+  if (!data?.length) {
+    const results = await Promise.all(ASX_SYMS.map(sym => fetchASXSingle(sym)));
+    data = results.filter(Boolean);
   }
-  const resolved = await Promise.all(results);
-  TSP.asxData = resolved.filter(Boolean);
-  if (TSP.asxData.length > 0) {
+
+  if (data?.length) {
+    TSP.asxData = data;
+    // Cache for next visit
+    try { sessionStorage.setItem(ASX_CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
     if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
     if (typeof updateAlerts === 'function') updateAlerts();
-  } else {
+  } else if (showErrors) {
+    const el = document.getElementById('asxTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
       <div>⚠ ASX data unavailable — proxies rate limited</div>
       <div style="font-size:11px;color:var(--text3)">Will retry on next refresh</div>
