@@ -41,53 +41,114 @@
 
 <script src="assets/app.js"></script>
 <script>
+// ── FEED CONFIG ───────────────────────────────────────
+// Feeds chosen for reliability through CORS proxies
 const NEWS_FEEDS = {
   crypto: [
-    { label:'CoinDesk',       url:'https://www.coindesk.com/arc/outboundfeeds/rss/' },
-    { label:'Cointelegraph',  url:'https://cointelegraph.com/rss' },
+    { label:'CoinDesk',        url:'https://www.coindesk.com/arc/outboundfeeds/rss/' },
+    { label:'Decrypt',         url:'https://decrypt.co/feed' },
   ],
   us: [
-    { label:'Yahoo Finance',  url:'https://finance.yahoo.com/news/rssindex' },
-    { label:'Reuters Biz',    url:'https://feeds.reuters.com/reuters/businessNews' },
+    { label:'Yahoo Finance',   url:'https://finance.yahoo.com/news/rssindex' },
+    { label:'MarketWatch',     url:'https://feeds.marketwatch.com/marketwatch/topstories/' },
   ],
   asx: [
-    { label:'ABC Business',   url:'https://www.abc.net.au/news/feed/51892/rss.xml' },
-    { label:'Yahoo AU',       url:'https://au.finance.yahoo.com/news/rssindex' },
+    { label:'ABC Business',    url:'https://www.abc.net.au/news/feed/51892/rss.xml' },
+    { label:'Yahoo AU',        url:'https://au.finance.yahoo.com/news/rssindex' },
   ],
 };
 
+const NEWS_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function mkNewsTimeout(ms) {
+  try { return AbortSignal.timeout(ms); } catch {
+    const c = new AbortController(); setTimeout(()=>c.abort(), ms); return c.signal;
+  }
+}
+
+// Fetch one RSS feed — tries allorigins (both /raw and /get) then corsproxy in parallel
 async function fetchFeed(feedUrl, label) {
-  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`;
-  try {
-    const r = await fetch(proxy, { signal: AbortSignal.timeout(7000) });
-    if (!r.ok) return [];
-    const d = await r.json();
-    const xml = new DOMParser().parseFromString(d.contents, 'text/xml');
-    return [...xml.querySelectorAll('item')].slice(0,8).map(item => {
+  const enc = encodeURIComponent(feedUrl);
+  const attempt = async (proxyUrl, isJson) => {
+    const r = await fetch(proxyUrl, { signal: mkNewsTimeout(6000) });
+    if (!r.ok) throw new Error(r.status);
+    const text = isJson ? (await r.json()).contents : await r.text();
+    if (!text || text.length < 100) throw new Error('empty');
+    const xml = new DOMParser().parseFromString(text, 'text/xml');
+    const items = [...xml.querySelectorAll('item')].slice(0, 8);
+    if (!items.length) throw new Error('no items');
+    return items.map(item => {
       const link = item.querySelector('link')?.textContent?.trim() ||
-                   item.querySelector('link')?.nextSibling?.textContent?.trim() || '#';
+                   item.querySelector('link')?.nextSibling?.textContent?.trim() || '';
+      const title = item.querySelector('title')?.textContent?.trim() || '';
+      if (!title || !link) return null;
       return {
-        title: item.querySelector('title')?.textContent?.trim() || '',
-        link,
-        desc: (item.querySelector('description')?.textContent||'').replace(/<[^>]+>/g,'').trim().slice(0,130),
+        title,
+        link: link.startsWith('http') ? link : feedUrl,
+        desc: (item.querySelector('description')?.textContent||'').replace(/<[^>]+>/g,'').trim().slice(0,140),
         date: item.querySelector('pubDate')?.textContent || '',
         source: label,
       };
-    }).filter(a => a.title && a.link !== '#');
+    }).filter(Boolean);
+  };
+
+  const proxies = [
+    [  `https://api.allorigins.win/get?url=${enc}`,    true  ],
+    [  `https://api.allorigins.win/raw?url=${enc}`,    false ],
+    [  `https://corsproxy.io/?${enc}`,                 false ],
+  ];
+
+  try {
+    return await Promise.any(proxies.map(([url, isJson]) => attempt(url, isJson)));
   } catch { return []; }
 }
 
 let currentTab = 'all';
 
+// Load news for a tab, using cache when available
 async function loadNews(type, tabEl) {
   currentTab = type;
   document.querySelectorAll('.tab-group .tab').forEach(t => t.classList.remove('active'));
   if (tabEl) tabEl.classList.add('active');
+
+  // Check sessionStorage cache — instant load
+  try {
+    const raw = sessionStorage.getItem(`tsp_news_${type}`);
+    if (raw) {
+      const { articles, ts } = JSON.parse(raw);
+      if (Date.now() - ts < NEWS_CACHE_TTL && articles?.length) {
+        renderNews(articles);
+        fetchNewsData(type, true); // silent background refresh
+        return;
+      }
+    }
+  } catch {}
+
+  // No cache — show spinner and fetch
   document.getElementById('newsGrid').innerHTML = '<div class="loading" style="grid-column:1/-1"><div class="spinner"></div> Loading news…</div>';
-  const feeds = type==='all' ? [...NEWS_FEEDS.crypto,...NEWS_FEEDS.us,...NEWS_FEEDS.asx] : (NEWS_FEEDS[type]||[]);
-  const results = await Promise.all(feeds.map(f => fetchFeed(f.url, f.label)));
-  const articles = results.flat().filter(a=>a.title).sort((a,b)=>new Date(b.date)-new Date(a.date));
-  renderNews(articles);
+  await fetchNewsData(type, false);
+}
+
+async function fetchNewsData(type, silent) {
+  const feeds = type === 'all'
+    ? [...NEWS_FEEDS.crypto, ...NEWS_FEEDS.us, ...NEWS_FEEDS.asx]
+    : (NEWS_FEEDS[type] || []);
+
+  // Use allSettled so slow/broken feeds don't block the others
+  const results = await Promise.allSettled(feeds.map(f => fetchFeed(f.url, f.label)));
+  const articles = results
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => r.value)
+    .filter(a => a?.title)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  if (articles.length) {
+    try { sessionStorage.setItem(`tsp_news_${type}`, JSON.stringify({ articles, ts: Date.now() })); } catch {}
+    if (!silent) renderNews(articles);
+    else renderNews(articles); // always update even silently (page is visible)
+  } else if (!silent) {
+    renderNews([]);
+  }
 }
 
 function renderNews(articles) {
@@ -116,6 +177,8 @@ function startCountdown() {
 
 async function refreshPage() {
   const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
+  // Bust cache on manual refresh
+  try { sessionStorage.removeItem(`tsp_news_${currentTab}`); } catch {}
   await loadNews(currentTab, document.getElementById(`tab-${currentTab}`));
   if(btn)btn.textContent='⟳ Refresh'; startCountdown();
 }
