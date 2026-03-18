@@ -416,17 +416,8 @@ const STOCK_NAMES = {
 };
 
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
-// Finnhub uses "ASX:BHP" format, we map display symbol (BHP.AX) to Finnhub symbol (ASX:BHP)
-const ASX_SYMS = [
-  {display:'BHP.AX', fh:'ASX:BHP'}, {display:'CBA.AX', fh:'ASX:CBA'},
-  {display:'CSL.AX', fh:'ASX:CSL'}, {display:'ANZ.AX', fh:'ASX:ANZ'},
-  {display:'WBC.AX', fh:'ASX:WBC'}, {display:'NAB.AX', fh:'ASX:NAB'},
-  {display:'WES.AX', fh:'ASX:WES'}, {display:'MQG.AX', fh:'ASX:MQG'},
-  {display:'RIO.AX', fh:'ASX:RIO'}, {display:'TLS.AX', fh:'ASX:TLS'},
-  {display:'FMG.AX', fh:'ASX:FMG'}, {display:'WOW.AX', fh:'ASX:WOW'},
-  {display:'GMG.AX', fh:'ASX:GMG'}, {display:'REA.AX', fh:'ASX:REA'},
-  {display:'XRO.AX', fh:'ASX:XRO'},
-];
+// ASX symbols — Yahoo Finance format (Finnhub free tier doesn't support ASX)
+const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
 
 const COLORS = ['#4a9eff','#00d084','#ff4757','#ffd32a','#a855f7','#f97316','#06b6d4','#ec4899','#84cc16','#f43f5e','#8b5cf6','#14b8a6','#fb923c','#a3e635','#e879f9'];
 const PORT_ASSETS = [
@@ -557,24 +548,60 @@ async function fetchAllStocks(){
   }
   document.getElementById('keyBanner').style.display='none';
 
-  // Fetch all quotes in parallel (Finnhub free: 60 calls/min — we use 30)
-  const [usQuotes,asxQuotes]=await Promise.all([
-    Promise.all(US_SYMS.map(s=>fetchFinnhubQuote(s,token))),
-    Promise.all(ASX_SYMS.map(s=>fetchFinnhubQuote(s.fh,token))),
-  ]);
+  // Fetch US via Finnhub, ASX via Yahoo Finance (Finnhub free tier is US-only)
+  const usQuotes = await Promise.all(US_SYMS.map(s=>fetchFinnhubQuote(s,token)));
+  usData = US_SYMS.map((s,i)=>normalizeStock(s,usQuotes[i])).filter(Boolean);
 
-  usData=US_SYMS.map((s,i)=>normalizeStock(s,usQuotes[i])).filter(Boolean);
-  // Use display symbol (BHP.AX) for rendering, but fetch via Finnhub symbol (ASX:BHP)
-  asxData=ASX_SYMS.map((s,i)=>normalizeStock(s.display,asxQuotes[i])).filter(Boolean);
-
-  if(!usData.length&&!asxData.length){
+  if(!usData.length){
     showToast('INFO','⚠️ Invalid API key','Check your Finnhub key and try again');
     document.getElementById('keyBanner').style.display='block';
-    needKey('usTable'); needKey('asxTable'); return;
+    needKey('usTable');
+  } else {
+    renderStocks('us',usData,'usTable');
   }
-  renderStocks('us',usData,'usTable');
-  renderStocks('asx',asxData,'asxTable');
+
+  // ASX via Yahoo Finance (no key needed, uses allorigins proxy)
+  await fetchASX();
   updateAlerts();
+}
+
+// ── FETCH ASX (Yahoo Finance via allorigins proxy) ───────
+async function fetchASX(){
+  document.getElementById('asxTable').innerHTML='<div class="loading"><div class="spin"></div> Fetching ASX stocks…</div>';
+  const syms = ASX_SYMS.join(',');
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.finance.yahoo.com/v7/finance/quote?symbols='+syms)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query2.finance.yahoo.com/v7/finance/quote?symbols='+syms)}`,
+    `https://corsproxy.io/?${encodeURIComponent('https://query1.finance.yahoo.com/v7/finance/quote?symbols='+syms)}`,
+  ];
+  for(const url of proxies){
+    try{
+      const r = await fetch(url, {signal: AbortSignal.timeout(8000)});
+      if(!r.ok) continue;
+      const d = await r.json();
+      const results = d?.quoteResponse?.result;
+      if(results && results.length){
+        asxData = results.map(s=>({
+          symbol: s.symbol,
+          shortName: s.shortName || STOCK_NAMES[s.symbol] || s.symbol,
+          regularMarketPrice: s.regularMarketPrice || 0,
+          regularMarketChangePercent: s.regularMarketChangePercent || 0,
+          fiftyTwoWeekHigh: s.fiftyTwoWeekHigh || s.regularMarketPrice,
+          fiftyTwoWeekLow: s.fiftyTwoWeekLow || s.regularMarketPrice,
+          marketCap: s.marketCap || null,
+          regularMarketVolume: s.regularMarketVolume || null,
+        })).filter(s=>s.regularMarketPrice>0);
+        renderStocks('asx',asxData,'asxTable');
+        return;
+      }
+    }catch{}
+  }
+  // All proxies failed — show helpful message
+  document.getElementById('asxTable').innerHTML=`
+    <div class="loading" style="flex-direction:column;gap:8px;color:var(--yellow)">
+      <div>⚠️ ASX data temporarily unavailable (proxy rate limited)</div>
+      <div style="font-size:12px;color:var(--txt3)">Will retry on next refresh · US stocks &amp; crypto are still live</div>
+    </div>`;
 }
 
 // ── RENDER CRYPTO ────────────────────────────────────────
@@ -889,7 +916,7 @@ async function refreshAll(){
   const btn=document.getElementById('refreshBtn');
   btn.textContent='⟳ Refreshing…';
   countdown=REFRESH_SEC;
-  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks()]);
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
   const t=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
   btn.textContent=`⟳ Updated ${t}`;
   setTimeout(()=>btn.textContent='⟳ Refresh',4000);
