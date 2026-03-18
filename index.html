@@ -377,7 +377,7 @@
 
   <!-- FOOTER -->
   <div style="text-align:center;padding:20px 0 10px;font-size:11px;color:var(--txt3)">
-    TradeSignal Pro · Data: CoinGecko + Yahoo Finance via corsproxy.io · Auto-refreshes every 60s · Not financial advice
+    TradeSignal Pro · Data: CoinGecko + Yahoo Finance · Auto-refreshes every 60s · Not financial advice
   </div>
 </div>
 
@@ -385,7 +385,12 @@
 // ── CONFIG ──────────────────────────────────────────────
 const REFRESH_SEC = 60;
 const AUD_FALLBACK = 1.57;
-const PROXY = 'https://corsproxy.io/?';
+const PROXIES = [
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
+];
 
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
 const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
@@ -469,11 +474,20 @@ async function fetchCrypto(){
 }
 
 // ── FETCH STOCKS ─────────────────────────────────────────
+async function fetchWithProxy(url){
+  for(const mkProxy of PROXIES){
+    try{
+      const r=await fetch(mkProxy(url),{signal:AbortSignal.timeout(6000)});
+      if(r.ok){const t=await r.text();return JSON.parse(t);}
+    }catch{}
+  }
+  return null;
+}
+
 async function fetchStocks(syms){
   try{
     const yUrl=`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms.join(',')}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap,fiftyTwoWeekHigh,fiftyTwoWeekLow,shortName,regularMarketChange`;
-    const r=await fetch(PROXY+encodeURIComponent(yUrl));
-    const d=await r.json();
+    const d=await fetchWithProxy(yUrl);
     return d?.quoteResponse?.result||[];
   }catch{return [];}
 }
