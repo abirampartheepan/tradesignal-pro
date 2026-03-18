@@ -105,7 +105,10 @@
 
 <script src="assets/app.js"></script>
 <script>
-function portSaveKey() { const s=getSession(); return s?`tsp_port_${s.username}`:'tsp_port_guest'; }
+function portSaveKey() {
+  const u = localStorage.getItem('tsp_current_user') || (getSession()?.username) || 'guest';
+  return `tsp_port_${u}`;
+}
 function clearPortfolioData() { localStorage.removeItem(portSaveKey()); refreshDataInfo(); }
 
 function loadSettingsData() {

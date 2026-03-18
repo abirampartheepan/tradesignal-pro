@@ -67,13 +67,14 @@
 <script src="assets/app.js"></script>
 <script>
 // ── PORTFOLIO PERSISTENCE ─────────────────────────────
+// Use localStorage username as primary key source — more reliable than
+// sessionStorage which can be unavailable during certain page transitions.
 function portSaveKey() {
-  const s = getSession();
-  return s ? `tsp_port_${s.username}` : 'tsp_port_guest';
+  const u = localStorage.getItem('tsp_current_user') || (getSession()?.username) || 'guest';
+  return `tsp_port_${u}`;
 }
 
-function savePortfolio() {
-  if (TSP._portLoading) return;
+function collectPortfolioData() {
   const rows = document.querySelectorAll('[id^="pr-"]');
   const data = [];
   rows.forEach(row => {
@@ -85,7 +86,12 @@ function savePortfolio() {
     const customPrice = (sym === 'CUSTOM' && curEl && !curEl.readOnly) ? curEl.value : '';
     if (sym) data.push({ sym, qty, buyP, customPrice });
   });
-  try { localStorage.setItem(portSaveKey(), JSON.stringify(data)); } catch {}
+  return data;
+}
+
+function savePortfolio() {
+  if (TSP._portLoading) return;
+  try { localStorage.setItem(portSaveKey(), JSON.stringify(collectPortfolioData())); } catch {}
 }
 
 function manualSave() {
@@ -97,8 +103,22 @@ function manualSave() {
 }
 
 function loadPortfolio() {
+  const key = portSaveKey();
   let data;
-  try { data = JSON.parse(localStorage.getItem(portSaveKey()) || 'null'); } catch {}
+  try { data = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+
+  // Migrate any data saved under the guest key before the user was logged in
+  if (!data?.length) {
+    try {
+      const guest = JSON.parse(localStorage.getItem('tsp_port_guest') || 'null');
+      if (guest?.length) {
+        data = guest;
+        localStorage.setItem(key, JSON.stringify(data));
+        localStorage.removeItem('tsp_port_guest');
+      }
+    } catch {}
+  }
+
   TSP._portLoading = true;
   if (!data || !data.length) {
     addPortRow(); addPortRow(); addPortRow();
@@ -121,6 +141,11 @@ function loadPortfolio() {
   }
   TSP._portLoading = false;
 }
+
+// Save whenever the user navigates away — catches all exit paths
+window.addEventListener('beforeunload', () => {
+  if (!TSP._portLoading) savePortfolio();
+});
 
 // ── PORTFOLIO FUNCTIONS ───────────────────────────────
 function getLivePrice(sym) {

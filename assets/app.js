@@ -723,6 +723,9 @@ async function doLogin() {
 
 function loginUser(username, finnhubKey) {
   setSession({ username });
+  // Persist username to localStorage so portfolio/watchlist keys work
+  // even if sessionStorage is temporarily unavailable (e.g. new tab edge cases)
+  localStorage.setItem('tsp_current_user', username);
   const overlay = document.getElementById('loginScreen');
   if (overlay) overlay.style.display = 'none';
 
@@ -762,9 +765,7 @@ function loginUser(username, finnhubKey) {
 
 function doLogout() {
   sessionStorage.removeItem(SES_KEY);
-  // Do NOT remove finnhub_key from localStorage — it is tied to the account
-  // profile and will be re-validated on next login. Clearing it here caused
-  // the key to disappear every time the user signed out and back in.
+  localStorage.removeItem('tsp_current_user');
   const overlay = document.getElementById('loginScreen');
   if (overlay) overlay.style.display = 'flex';
   ['lUser','lPass'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
