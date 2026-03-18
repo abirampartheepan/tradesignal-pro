@@ -37,18 +37,6 @@
           <button class="settings-btn" onclick="changePassword()">Update Password</button>
         </div>
 
-        <!-- API Keys -->
-        <div class="settings-section">
-          <div class="settings-section-title">API Keys</div>
-          <div class="settings-row">
-            <div class="settings-label">Finnhub API Key <span style="font-weight:400;text-transform:none;font-size:10px">(US Stocks)</span></div>
-            <input class="settings-input" id="setFinnhub" type="text" placeholder="Paste your Finnhub key…">
-            <div style="font-size:10px;color:var(--text3);margin-top:4px">
-              Free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a> · Required for US stock data
-            </div>
-          </div>
-          <button class="settings-btn" onclick="saveFinnhubKey()">Save API Key</button>
-        </div>
 
         <!-- Notifications & Display -->
         <div class="settings-section">
@@ -117,7 +105,6 @@ function loadSettingsData() {
   const users = getUsers();
   const user  = users[session.username] || {};
   document.getElementById('setUsername').value = session.username;
-  document.getElementById('setFinnhub').value  = user.finnhubKey || '';
   updateNotifBtn();
   updateThemeDisplay();
   refreshDataInfo();
@@ -173,12 +160,6 @@ async function changePassword() {
   showToast('INFO','✅ Password updated','Your new password is active');
 }
 
-function saveFinnhubKey() {
-  const k = document.getElementById('setFinnhub').value.trim();
-  if (!k) { showToast('INFO','No key','Paste your Finnhub API key first'); return; }
-  persistKey(k); // shared helper — saves to localStorage AND user profile
-  showToast('INFO','✅ API key saved','US stock data will use this key on next load');
-}
 
 async function bootDashboard() {
   document.getElementById('appShell').style.display='flex';

@@ -20,18 +20,7 @@
     <div class="content">
       <div class="disclaimer">
         <strong>Disclaimer:</strong> US stock signals use trend RSI derived from 52-week price range and daily momentum.
-        Data sourced from Finnhub. Not financial advice.
-      </div>
-
-      <!-- KEY BANNER -->
-      <div class="key-banner" id="keyBanner" style="display:none">
-        <div style="flex:1;min-width:180px">
-          <div style="font-size:13px;font-weight:700;margin-bottom:3px">🔑 Finnhub API Key Required</div>
-          <div style="font-size:11px;color:var(--text3)">Free key · No credit card · 60 API calls/min</div>
-        </div>
-        <a href="https://finnhub.io/register" target="_blank" class="key-link">1. Get Free Key →</a>
-        <input id="keyInput" type="text" placeholder="2. Paste your Finnhub API key here…" style="flex:2;min-width:200px">
-        <button class="key-btn" onclick="saveKey()">3. Save &amp; Load</button>
+        Data sourced from Yahoo Finance via public API. Not financial advice.
       </div>
 
       <!-- STAT CARDS -->
@@ -97,14 +86,10 @@ function updateUSStats() {
   document.getElementById('audRate').textContent = '1 USD = A$'+f2(TSP.audRate,4);
 }
 
-const _origRenderStocks = renderStocks;
-const _renderStocks = renderStocks;
-
-// Hook into renderStocks to update stats after US render
-const origRender = window.renderStocks;
-window.renderStocksOrig = renderStocks;
+// Hook into renderStocks to update stat cards after US data renders
+const _rsOrig = window.renderStocks;
 window.renderStocks = function(type, data, elId) {
-  window.renderStocksOrig(type, data, elId);
+  _rsOrig(type, data, elId);
   if (type === 'us') updateUSStats();
 };
 
@@ -124,7 +109,9 @@ async function refreshPage() {
   const btn = document.getElementById('refreshBtn');
   if (btn) btn.textContent = '⟳ Loading…';
   TSP.countdown = REFRESH_SEC;
-  await Promise.all([fetchAUD(), fetchAllStocks()]);
+  // Bust cache so we always get fresh data on manual refresh
+  try { sessionStorage.removeItem(US_CACHE_KEY); } catch {}
+  await Promise.all([fetchAUD(), fetchUS()]);
   if (TSP.usData.length) updateUSStats();
   if (btn) btn.textContent = '⟳ Refresh';
   startCountdown();
@@ -132,7 +119,7 @@ async function refreshPage() {
 
 async function bootDashboard() {
   document.getElementById('appShell').style.display = 'flex';
-  await Promise.all([fetchAUD(), fetchAllStocks()]);
+  await Promise.all([fetchAUD(), fetchUS()]);
   if (TSP.audRate) document.getElementById('audRate').textContent = '1 USD = A$'+f2(TSP.audRate,4);
   startCountdown();
 }

@@ -208,108 +208,153 @@ async function fetchCrypto() {
   }
 }
 
-// ── FETCH FINNHUB (US STOCKS) ───────────────────────
-function getKey() { return (localStorage.getItem('finnhub_key') || '').trim(); }
+// ── FETCH US STOCKS (Yahoo Finance — no API key needed) ─
+// Strategy: 1) Show cache instantly  2) Batch request (1 call for all 15)
+//           3) Parallel individual fallback  4) Save result to cache
 
-function persistKey(k) {
-  if (!k) return;
-  localStorage.setItem('finnhub_key', k);
-  const session = getSession();
-  if (session) {
-    const users = getUsers();
-    if (users[session.username]) { users[session.username].finnhubKey = k; saveUsers(users); }
-  }
-}
+const US_CACHE_KEY  = 'tsp_us_cache';
+const US_CACHE_TTL  = 5  * 60 * 1000; // 5 min — sessionStorage (current tab)
+const US_STORE_KEY  = 'tsp_us_store';
+const US_STORE_TTL  = 30 * 60 * 1000; // 30 min — localStorage (cross-tab/page)
 
-function saveKey() {
-  const raw = document.getElementById('keyInput')?.value || '';
-  const k = raw.trim();
-  if (!k) { showToast('INFO','No key entered','Paste your Finnhub key first'); return; }
-  persistKey(k);
-  const banner = document.getElementById('keyBanner');
-  if (banner) banner.style.display = 'none';
-  showToast('INFO','✅ Key saved','Loading US stock data…');
-  fetchAllStocks();
-}
 
-async function fetchFinnhubQuote(sym, token) {
-  try {
-    const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${token}`);
-    // Only definitive HTTP auth rejections count as a bad key.
-    // 429 rate-limit, network failures, and Finnhub's own d.error body
-    // (which fires for BOTH bad keys AND rate limits) all return null so
-    // they never accidentally trigger a key wipe.
-    if (r.status === 401 || r.status === 403) return { _badKey: true };
-    if (!r.ok) return null;
-    const d = await r.json();
-    if (d?.error) return null; // could be rate-limit — don't treat as auth failure
-    return d.c > 0 ? d : null;
-  } catch { return null; }
-}
-
-function normalizeStock(sym, q) {
-  if (!q) return null;
-  const chgPct = q.dp || 0;
-  const hi52 = Math.max(q.h, q.pc) * (1 + Math.abs(chgPct)/100*3 + 0.05);
-  const lo52 = Math.min(q.l, q.pc) * (1 - Math.abs(chgPct)/100*3 - 0.05);
+function normaliseUSStock(sym, data) {
+  if (!data || !data.regularMarketPrice) return null;
   return {
-    symbol: sym, shortName: STOCK_NAMES[sym] || sym,
-    regularMarketPrice: q.c, regularMarketChangePercent: chgPct,
-    fiftyTwoWeekHigh: hi52, fiftyTwoWeekLow: lo52,
-    marketCap: null, regularMarketVolume: null,
-    dayHigh: q.h, dayLow: q.l, prevClose: q.pc,
+    symbol: sym,
+    shortName: STOCK_NAMES[sym] || sym,
+    regularMarketPrice: data.regularMarketPrice || 0,
+    regularMarketChangePercent: data.regularMarketChangePercent || 0,
+    fiftyTwoWeekHigh: data.fiftyTwoWeekHigh || data.regularMarketPrice * 1.2,
+    fiftyTwoWeekLow:  data.fiftyTwoWeekLow  || data.regularMarketPrice * 0.8,
+    marketCap: data.marketCap || null,
+    regularMarketVolume: data.regularMarketVolume || null,
   };
 }
 
-async function fetchAllStocks() {
-  const token = getKey();
-  const needKey = (elId) => {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    el.innerHTML = `<div class="loading" style="flex-direction:column;gap:10px">
-      <div style="font-size:13px;color:var(--text2)">🔑 Enter your free Finnhub API key to load stock data</div>
-      <div style="font-size:11px;color:var(--text3)">Get a free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a></div>
-    </div>`;
+// Batch request — races all proxies in parallel (fastest wins)
+async function fetchUSBatch() {
+  const syms   = US_SYMS.join(',');
+  const fields = 'regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName';
+  const base   = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=${fields}`;
+  const base2  = base.replace('query1', 'query2');
+
+  const attempt = async (proxyUrl) => {
+    const r = await fetch(proxyUrl, { signal: mkTimeout(7000) });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const results = d?.quoteResponse?.result;
+    if (!results?.length) throw new Error('empty');
+    return results.map(s => normaliseUSStock(s.symbol, s)).filter(Boolean);
   };
 
-  if (!token) {
-    const banner = document.getElementById('keyBanner');
-    if (banner) banner.style.display = 'flex';
-    needKey('usTable');
-    return;
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+    `https://corsproxy.io/?${encodeURIComponent(base)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(base2)}`,
+    `https://corsproxy.io/?${encodeURIComponent(base2)}`,
+  ];
+
+  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
+}
+
+// Individual chart fetch per symbol — fallback if batch fails
+async function fetchUSSingle(sym) {
+  const base  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
+  const base2 = base.replace('query1', 'query2');
+
+  const attempt = async (proxyUrl) => {
+    const r = await fetch(proxyUrl, { signal: mkTimeout(6000) });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const meta = d?.chart?.result?.[0]?.meta;
+    if (!(meta?.regularMarketPrice > 0)) throw new Error('no price');
+    const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
+    return normaliseUSStock(sym, {
+      regularMarketPrice: meta.regularMarketPrice,
+      regularMarketChangePercent: meta.regularMarketChangePercent || ((meta.regularMarketPrice - prev) / prev * 100),
+      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow:  meta.fiftyTwoWeekLow,
+      regularMarketVolume: meta.regularMarketVolume,
+    });
+  };
+
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+    `https://corsproxy.io/?${encodeURIComponent(base)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(base2)}`,
+  ];
+
+  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
+}
+
+async function fetchUS() {
+  const el = document.getElementById('usTable');
+
+  // 1. Try sessionStorage cache first (fastest — same tab)
+  try {
+    const raw = sessionStorage.getItem(US_CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < US_CACHE_TTL && data?.length) {
+        TSP.usData = data;
+        if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
+        if (typeof updateAlerts === 'function') updateAlerts();
+        fetchUSFresh(false); // silent background refresh
+        return;
+      }
+    }
+  } catch {}
+
+  // 2. Try localStorage stale cache (cross-tab — instant display while fetching fresh)
+  try {
+    const raw = localStorage.getItem(US_STORE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < US_STORE_TTL && data?.length) {
+        TSP.usData = data;
+        if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
+        if (typeof updateAlerts === 'function') updateAlerts();
+        fetchUSFresh(false); // silent background refresh
+        return;
+      }
+    }
+  } catch {}
+
+  // 3. No cache at all — show spinner and fetch
+  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching US stock data…</div>';
+  await fetchUSFresh(true);
+}
+
+async function fetchUSFresh(showErrors) {
+  // Try batch first (1 request for all 15 symbols)
+  let data = await fetchUSBatch();
+
+  // Batch failed — try all 15 in full parallel
+  if (!data?.length) {
+    const results = await Promise.all(US_SYMS.map(sym => fetchUSSingle(sym)));
+    data = results.filter(Boolean);
   }
 
-  const banner = document.getElementById('keyBanner');
-  if (banner) banner.style.display = 'none';
-
-  const quotes = await Promise.all(US_SYMS.map(s => fetchFinnhubQuote(s, token)));
-  const badKey = quotes.some(q => q?._badKey);
-  TSP.usData = US_SYMS.map((s,i) => normalizeStock(s, quotes[i])).filter(Boolean);
-
-  if (badKey) {
-    // Definitive HTTP 401/403 — key was rejected by Finnhub
-    // Show the re-entry banner but do NOT auto-delete the key from storage.
-    // The user may have a valid key that's temporarily failing; they can
-    // overwrite it themselves via the banner or Settings page.
-    showToast('INFO','⚠ API key rejected','Re-enter your Finnhub key using the banner below');
-    const banner = document.getElementById('keyBanner');
-    if (banner) banner.style.display = 'flex';
-    needKey('usTable');
-    return;
-  }
-
-  if (!TSP.usData.length) {
-    // All 15 returned null — rate-limited or network issue — key is fine
-    showToast('INFO','⚠ US data unavailable','Finnhub rate limited — retrying on next refresh');
+  if (data?.length) {
+    TSP.usData = data;
+    const payload = JSON.stringify({ data, ts: Date.now() });
+    try { sessionStorage.setItem(US_CACHE_KEY, payload); } catch {}
+    try { localStorage.setItem(US_STORE_KEY, payload); } catch {}
+    if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
+    if (typeof updateAlerts === 'function') updateAlerts();
+    if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
+  } else if (showErrors) {
     const el = document.getElementById('usTable');
-    if (el && !el.querySelector('table')) el.innerHTML = `<div class="loading" style="color:var(--amber)">⚠ Finnhub rate limited — will retry automatically</div>`;
-    return;
+    if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
+      <div>⚠ US stock data unavailable — proxies rate limited</div>
+      <div style="font-size:11px;color:var(--text3)">Will retry on next refresh</div>
+    </div>`;
   }
-
-  if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
-  if (typeof updateAlerts === 'function') updateAlerts();
-  if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
 }
+
+// Alias so all existing pages (portfolio, watchlist, signals, index) keep working
+const fetchAllStocks = fetchUS;
 
 // ── FETCH ASX ────────────────────────────────────────
 // Strategy: 1) Show cache instantly  2) Batch request (1 call for all 15)
@@ -700,15 +745,14 @@ function showAuthMsg(id, msg) {
 async function doSignup() {
   const user = document.getElementById('sUser')?.value.trim().toLowerCase();
   const pass = document.getElementById('sPass')?.value;
-  const key  = document.getElementById('sKey')?.value.trim();
   if (!user || user.length < 3) return showAuthMsg('authErr','Username must be at least 3 characters');
   if (!pass || pass.length < 6) return showAuthMsg('authErr','Password must be at least 6 characters');
   const users = getUsers();
   if (users[user]) return showAuthMsg('authErr','Username already taken — sign in instead');
-  users[user] = { hash: await hashPass(pass), finnhubKey: key || '', notifOn: false };
+  users[user] = { hash: await hashPass(pass), notifOn: false };
   saveUsers(users);
   showAuthMsg('authOk','Account created — signing you in…');
-  setTimeout(() => loginUser(user, key || ''), 700);
+  setTimeout(() => loginUser(user), 700);
 }
 
 async function doLogin() {
@@ -718,13 +762,11 @@ async function doLogin() {
   const users = getUsers();
   if (!users[user]) return showAuthMsg('authErr','Account not found — create one first');
   if (await hashPass(pass) !== users[user].hash) return showAuthMsg('authErr','Incorrect password');
-  loginUser(user, users[user].finnhubKey || '');
+  loginUser(user);
 }
 
-function loginUser(username, finnhubKey) {
+function loginUser(username) {
   setSession({ username });
-  // Persist username to localStorage so portfolio/watchlist keys work
-  // even if sessionStorage is temporarily unavailable (e.g. new tab edge cases)
   localStorage.setItem('tsp_current_user', username);
   const overlay = document.getElementById('loginScreen');
   if (overlay) overlay.style.display = 'none';
@@ -732,23 +774,6 @@ function loginUser(username, finnhubKey) {
   const initials = username.slice(0,2).toUpperCase();
   document.querySelectorAll('.user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.user-name').forEach(el => el.textContent = username);
-
-  // Use profile key if available; otherwise keep whatever is already in localStorage.
-  // Never delete an existing key just because the profile entry is empty.
-  const profileKey  = (finnhubKey || '').trim();
-  const storedKey   = (localStorage.getItem('finnhub_key') || '').trim();
-  const resolvedKey = profileKey || storedKey;
-
-  if (resolvedKey) {
-    localStorage.setItem('finnhub_key', resolvedKey);
-    // Sync back to user profile if the profile was missing it
-    if (!profileKey && resolvedKey) {
-      const users = getUsers();
-      if (users[username]) { users[username].finnhubKey = resolvedKey; saveUsers(users); }
-    }
-    const banner = document.getElementById('keyBanner');
-    if (banner) banner.style.display = 'none';
-  }
 
   // Restore saved notification preference for this user
   const users = getUsers();
@@ -776,7 +801,7 @@ function initAuth() {
   if (session) {
     const users = getUsers();
     const userData = users[session.username];
-    if (userData) { loginUser(session.username, userData.finnhubKey || ''); return; }
+    if (userData) { loginUser(session.username); return; }
   }
   const overlay = document.getElementById('loginScreen');
   if (overlay) overlay.style.display = 'flex';
@@ -818,11 +843,6 @@ function renderLoginScreen() {
         <div class="field">
           <label>Password</label>
           <input type="password" id="sPass" placeholder="Choose a password (min 6 chars)">
-        </div>
-        <div class="field">
-          <label>Finnhub API Key <span style="font-weight:400;text-transform:none">(optional)</span></label>
-          <input type="text" id="sKey" placeholder="Paste your Finnhub key…">
-          <div class="hint">Free key at <a href="https://finnhub.io/register" target="_blank">finnhub.io/register</a> · Saves US stock data</div>
         </div>
         <button class="login-submit" onclick="doSignup()">Create Account</button>
       </div>
