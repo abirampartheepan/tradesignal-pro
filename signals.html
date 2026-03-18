@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signal History — TradeSignal Pro</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="loginMount"></div>
+<div id="toasts"></div>
+
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div id="topbarMount"></div>
+    <div class="content">
+      <div class="disclaimer">
+        <strong>Signal History:</strong> Logs every BUY/SELL signal change detected while the dashboard is open.
+        Signals are recorded across all pages and stored in your account (up to 300 entries).
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Signal Change Log</div>
+            <div class="panel-meta" id="logMeta">Loading…</div>
+          </div>
+          <button class="btn-add" onclick="if(confirm('Clear all signal history?')){clearSignalLog();renderLog()}" style="background:var(--rbg);border-color:var(--rborder);color:var(--red)">✕ Clear Log</button>
+        </div>
+        <div id="logContainer"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+function renderLog() {
+  const log = getSignalLog();
+  const meta = document.getElementById('logMeta');
+  if (meta) meta.textContent = log.length ? `${log.length} signal change${log.length!==1?'s':''} recorded · Newest first` : 'No entries yet';
+
+  const el = document.getElementById('logContainer');
+  if (!log.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">◉</div>
+      <div class="empty-state-title">No signal changes recorded yet</div>
+      <div class="empty-state-sub">Signals are logged automatically when an asset changes from HOLD → BUY or HOLD → SELL. Keep any dashboard page open to start recording.</div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="padding:10px 18px;background:var(--bg);display:grid;grid-template-columns:130px 80px 70px 1fr 110px;gap:10px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">Time</div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">Signal</div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">Market</div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">Asset &amp; Reason</div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);text-align:right">Price</div>
+    </div>
+    <div class="sig-log">
+      ${log.map(e => {
+        const d = new Date(e.ts);
+        const ts = d.toLocaleDateString('en-AU',{month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+        return `<div class="sig-log-row">
+          <div class="sig-ts">${ts}</div>
+          <div><span class="signal-badge ${e.signal}" style="font-size:10px;padding:3px 7px">${e.signal==='BUY'?'▲':'▼'} ${e.signal}</span></div>
+          <div class="sig-mkt">${e.market}</div>
+          <div>
+            <div style="font-weight:600">${e.name}</div>
+            <div style="font-size:10px;color:var(--text3)">${e.why}</div>
+          </div>
+          <div style="text-align:right" class="mono">$${fPrice(e.price)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+let countdownTimer;
+function startCountdown() {
+  clearInterval(countdownTimer); TSP.countdown=REFRESH_SEC;
+  countdownTimer=setInterval(()=>{ TSP.countdown--; const el=document.getElementById('countdown'); if(el)el.textContent=TSP.countdown+'s'; if(TSP.countdown<=0){refreshPage();TSP.countdown=REFRESH_SEC;} },1000);
+}
+
+async function refreshPage() {
+  const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  renderLog(); if(btn)btn.textContent='⟳ Refresh'; startCountdown();
+}
+
+async function bootDashboard() {
+  document.getElementById('appShell').style.display='flex';
+  renderLog();
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  renderLog();
+  startCountdown();
+}
+
+document.getElementById('loginMount').innerHTML  = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('signals.html');
+document.getElementById('topbarMount').innerHTML  = renderTopbar('Signal History');
+initAuth();
+</script>
+</body>
+</html>

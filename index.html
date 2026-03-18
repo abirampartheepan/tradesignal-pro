@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Overview — TradeSignal Pro</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -61,43 +60,36 @@
         </div>
       </div>
 
-      <!-- PORTFOLIO CALCULATOR -->
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <div class="panel-title">Portfolio Calculator</div>
-            <div class="panel-meta" id="portMeta">All 45 assets available · Prices update live every 60s · Auto-recalculates on refresh</div>
+      <!-- QUICK LINKS -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+        <a href="portfolio.html" style="text-decoration:none">
+          <div class="stat-card" style="cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor=''">
+            <div class="stat-label">Portfolio</div>
+            <div class="stat-value" style="font-size:18px">◎</div>
+            <div class="stat-sub">Track your holdings →</div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <div id="portLiveTag" style="display:none;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--green);border:1px solid var(--gborder);padding:3px 8px;border-radius:3px">● Live</div>
-            <button class="btn-add" onclick="addPortRow()">+ Add Position</button>
+        </a>
+        <a href="watchlist.html" style="text-decoration:none">
+          <div class="stat-card" style="cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">
+            <div class="stat-label">Watchlist</div>
+            <div class="stat-value" style="font-size:18px;color:var(--gold)" id="watchCount">★ —</div>
+            <div class="stat-sub">Your starred assets →</div>
           </div>
-        </div>
-        <div class="port-grid">
-          <div class="port-left">
-            <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 32px;gap:8px;margin-bottom:8px;padding:0 2px">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Asset</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Quantity</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Buy Price (AUD)</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Live Price (AUD)</div>
-              <div></div>
-            </div>
-            <div id="portRows"></div>
-            <button class="btn-calc" onclick="calcPortfolio()">Calculate Portfolio Value</button>
-            <div class="port-totals" id="portTotals" style="display:none">
-              <div class="pt-item"><div class="pt-lbl">Total Value (AUD)</div><div class="pt-val b" id="ptTotal">—</div></div>
-              <div class="pt-item"><div class="pt-lbl">Profit / Loss</div><div class="pt-val" id="ptChange">—</div></div>
-              <div class="pt-item"><div class="pt-lbl">Best Performer</div><div class="pt-val g" id="ptBest">—</div></div>
-            </div>
+        </a>
+        <a href="signals.html" style="text-decoration:none">
+          <div class="stat-card" style="cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor=''">
+            <div class="stat-label">Signal History</div>
+            <div class="stat-value" style="font-size:18px" id="sigCount">◉ —</div>
+            <div class="stat-sub">Past BUY/SELL alerts →</div>
           </div>
-          <div class="port-right">
-            <div class="chart-label">Allocation by Value</div>
-            <canvas id="pieChart" width="280" height="280"></canvas>
-            <div class="port-legend" id="portLegend">
-              <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:16px">Add assets above and calculate to view chart</div>
-            </div>
+        </a>
+        <a href="news.html" style="text-decoration:none">
+          <div class="stat-card" style="cursor:pointer;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor=''">
+            <div class="stat-label">News Feed</div>
+            <div class="stat-value" style="font-size:18px">◫</div>
+            <div class="stat-sub">Financial headlines →</div>
           </div>
-        </div>
+        </a>
       </div>
 
       <div style="font-size:10px;color:var(--text3);text-align:center;padding:16px 0">
@@ -109,84 +101,11 @@
 
 <script src="assets/app.js"></script>
 <script>
-// ── PORTFOLIO ASSET REGISTRY ─────────────────────────
-
-// Get live AUD price for any supported symbol
-function getLivePrice(sym) {
-  if (!sym || sym === 'CUSTOM') return null;
-  const coin = TSP.cryptoData.find(c =>
-    c.symbol.toUpperCase() === sym || c.id === sym.toLowerCase()
-  );
-  if (coin) return coin.current_price * TSP.audRate;
-  const us = TSP.usData.find(s => s.symbol === sym);
-  if (us) return us.regularMarketPrice * TSP.audRate;
-  const asx = TSP.asxData.find(s => s.symbol === sym);
-  if (asx) return asx.regularMarketPrice;
-  return null;
-}
-
-// Build grouped <optgroup> options from all live data
-function buildPortOptions() {
-  const cryptoOpts = TSP.cryptoData.length
-    ? TSP.cryptoData.map(c =>
-        `<option value="${c.symbol.toUpperCase()}">${c.name} (${c.symbol.toUpperCase()})</option>`
-      ).join('')
-    : US_SYMS.map(s => '').join(''); // empty until loaded
-
-  const usOpts = US_SYMS.map(s =>
-    `<option value="${s}">${STOCK_NAMES[s]||s} (${s})</option>`
-  ).join('');
-
-  const asxOpts = ASX_SYMS.map(s =>
-    `<option value="${s}">${STOCK_NAMES[s]||s} (${s.replace('.AX','')})</option>`
-  ).join('');
-
-  return `<option value="">Select asset…</option>
-    <optgroup label="── Cryptocurrency (Top 15)">
-      ${cryptoOpts || '<option disabled>Loading crypto…</option>'}
-    </optgroup>
-    <optgroup label="── US Stocks (NYSE / NASDAQ)">
-      ${usOpts}
-    </optgroup>
-    <optgroup label="── ASX Stocks (Australia)">
-      ${asxOpts}
-    </optgroup>
-    <option value="CUSTOM">✏ Custom / Manual Price</option>`;
-}
-
-// Repopulate all existing selects when new data arrives
-function refreshPortfolioSelects() {
-  const opts = buildPortOptions();
-  document.querySelectorAll('[id^="pSym-"]').forEach(sel => {
-    const current = sel.value;
-    sel.innerHTML = opts;
-    sel.value = current; // restore selection
-  });
-}
-
-// Update all live prices in portfolio rows, then auto-recalculate
-function refreshPortfolioPrices() {
-  refreshPortfolioSelects();
-  let anyUpdated = false;
-  document.querySelectorAll('[id^="pr-"]').forEach(row => {
-    const id = row.id.replace('pr-', '');
-    const sym = document.getElementById(`pSym-${id}`)?.value;
-    if (!sym || sym === 'CUSTOM') return;
-    const price = getLivePrice(sym);
-    const el = document.getElementById(`pCur-${id}`);
-    if (el && price) {
-      el.value = 'A$' + fPrice(price);
-      el._num = price;
-      anyUpdated = true;
-    }
-  });
-  // Show live indicator
-  if (anyUpdated) {
-    const tag = document.getElementById('portLiveTag');
-    if (tag) tag.style.display = 'block';
-  }
-  // Auto-recalculate if user has already clicked Calculate once
-  if (anyUpdated && TSP.portfolioCalculated) calcPortfolio(true);
+function updateQuickLinks() {
+  const wc = document.getElementById('watchCount');
+  const sc = document.getElementById('sigCount');
+  if (wc) { const n=getWatchlist().length; wc.textContent=`★ ${n}`; }
+  if (sc) { const n=getSignalLog().length; sc.textContent=`◉ ${n}`; }
 }
 
 function updateStats() {
@@ -261,188 +180,6 @@ function updateAlerts() {
     </div>`).join('');
 }
 
-// ── PORTFOLIO PERSISTENCE ────────────────────────────
-function portSaveKey() {
-  const s = getSession();
-  return s ? `tsp_port_${s.username}` : 'tsp_port_guest';
-}
-
-function savePortfolio() {
-  const rows = document.querySelectorAll('[id^="pr-"]');
-  const data = [];
-  rows.forEach(row => {
-    const id   = row.id.replace('pr-','');
-    const sym  = document.getElementById(`pSym-${id}`)?.value || '';
-    const qty  = document.getElementById(`pQty-${id}`)?.value || '';
-    const buyP = document.getElementById(`pBuy-${id}`)?.value || '';
-    const curEl= document.getElementById(`pCur-${id}`);
-    const customPrice = (sym === 'CUSTOM' && curEl && !curEl.readOnly) ? curEl.value : '';
-    if (sym) data.push({ sym, qty, buyP, customPrice });
-  });
-  try { localStorage.setItem(portSaveKey(), JSON.stringify(data)); } catch {}
-}
-
-function loadPortfolio() {
-  let data;
-  try { data = JSON.parse(localStorage.getItem(portSaveKey()) || 'null'); } catch {}
-  if (!data || !data.length) {
-    // No saved portfolio — add 3 blank starter rows
-    addPortRow(); addPortRow(); addPortRow();
-    return;
-  }
-  data.forEach(item => {
-    addPortRow();
-    const id = TSP.portRowId;
-    const symEl = document.getElementById(`pSym-${id}`);
-    const qtyEl = document.getElementById(`pQty-${id}`);
-    const buyEl = document.getElementById(`pBuy-${id}`);
-    if (symEl) symEl.value = item.sym;
-    if (qtyEl) qtyEl.value = item.qty;
-    if (buyEl) buyEl.value = item.buyP;
-    // Trigger price lookup (will fill in once live data arrives)
-    autoPrice(id);
-    // If custom, restore the typed price too
-    if (item.sym === 'CUSTOM' && item.customPrice) {
-      const curEl = document.getElementById(`pCur-${id}`);
-      if (curEl) { curEl.value = item.customPrice; curEl._num = parseFloat(item.customPrice) || null; }
-    }
-  });
-}
-
-// ── PORTFOLIO ROWS ───────────────────────────────────
-function addPortRow() {
-  TSP.portRowId++;
-  const id = TSP.portRowId;
-  const row = document.createElement('div');
-  row.className = 'port-row'; row.id = `pr-${id}`;
-  row.innerHTML = `
-    <div class="fg">
-      <select id="pSym-${id}" onchange="autoPrice(${id});savePortfolio()">
-        ${buildPortOptions()}
-      </select>
-    </div>
-    <div class="fg"><input type="number" id="pQty-${id}" placeholder="e.g. 0.5" min="0" step="any" oninput="savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
-    <div class="fg"><input type="number" id="pBuy-${id}" placeholder="Your buy price" min="0" step="any" oninput="savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
-    <div class="fg">
-      <input type="text" id="pCur-${id}" placeholder="Select asset…" readonly
-        style="opacity:.7;cursor:default;font-weight:600">
-    </div>
-    <button class="btn-del" onclick="document.getElementById('pr-${id}').remove();savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)">✕</button>`;
-  document.getElementById('portRows').appendChild(row);
-}
-
-function autoPrice(id) {
-  const sym = document.getElementById(`pSym-${id}`)?.value;
-  const el  = document.getElementById(`pCur-${id}`);
-  if (!sym) { if(el){el.value=''; el._num=null;} return; }
-
-  if (sym === 'CUSTOM') {
-    if (el) { el.value=''; el._num=null; el.removeAttribute('readonly'); el.placeholder='Enter price (AUD)'; el.style.opacity='1'; el.style.cursor='text'; }
-    el.oninput = () => { el._num = parseFloat(el.value)||null; savePortfolio(); if(TSP.portfolioCalculated)calcPortfolio(true); };
-    return;
-  }
-
-  // Lock back to readonly for known assets
-  if (el) { el.setAttribute('readonly',''); el.style.opacity='.7'; el.style.cursor='default'; el.placeholder='Loading…'; el.oninput=null; }
-
-  const price = getLivePrice(sym);
-  if (el && price) { el.value = 'A$' + fPrice(price); el._num = price; }
-  else if (el)     { el.value = 'Price loading…'; el._num = null; }
-
-  if (TSP.portfolioCalculated) calcPortfolio(true);
-}
-
-// ── PORTFOLIO CALCULATE ──────────────────────────────
-function calcPortfolio(silent=false) {
-  const rows = document.querySelectorAll('[id^="pr-"]');
-  if (!rows.length) { if(!silent) showToast('INFO','No assets','Add positions first'); return; }
-
-  const items = []; let totVal=0, totCost=0;
-  rows.forEach(row => {
-    const id   = row.id.replace('pr-','');
-    const sym  = document.getElementById(`pSym-${id}`)?.value || '';
-    const qty  = parseFloat(document.getElementById(`pQty-${id}`)?.value) || 0;
-    const buyP = parseFloat(document.getElementById(`pBuy-${id}`)?.value) || 0;
-    const curEl= document.getElementById(`pCur-${id}`);
-    const curP = curEl?._num || null;
-    if (qty > 0 && sym && curP) {
-      const val=qty*curP, cost=qty*buyP;
-      items.push({ sym, qty, buyP, curP, val, cost });
-      totVal+=val; totCost+=cost;
-    }
-  });
-
-  if (!items.length) { if(!silent) showToast('INFO','No data','Ensure assets are selected and prices have loaded'); return; }
-
-  TSP.portfolioCalculated = true;
-
-  const pnl    = totVal - totCost;
-  const pnlPct = totCost > 0 ? (pnl/totCost*100) : 0;
-  const best   = items.reduce((a,b) => {
-    const bRet = b.buyP>0 ? (b.curP-b.buyP)/b.buyP : 0;
-    const aRet = a.buyP>0 ? (a.curP-a.buyP)/a.buyP : 0;
-    return bRet > aRet ? b : a;
-  });
-  const worst  = items.reduce((a,b) => {
-    const bRet = b.buyP>0 ? (b.curP-b.buyP)/b.buyP : 0;
-    const aRet = a.buyP>0 ? (a.curP-a.buyP)/a.buyP : 0;
-    return bRet < aRet ? b : a;
-  });
-
-  document.getElementById('ptTotal').textContent  = 'A$'+f2(totVal);
-  document.getElementById('ptChange').innerHTML   = `<span class="${gc(pnl)}">${gs(pnl)}A$${f2(Math.abs(pnl))} (${gs(pnlPct)}${f2(pnlPct)}%)</span>`;
-  document.getElementById('ptBest').textContent   = best.sym + (best.buyP>0?` ${gs((best.curP-best.buyP)/best.buyP*100)}${f2((best.curP-best.buyP)/best.buyP*100)}%`:'');
-  document.getElementById('portTotals').style.display = 'grid';
-
-  // Update or create pie chart
-  const labels = items.map(i=>i.sym);
-  const values = items.map(i=>i.val);
-  const colors = CHART_COLORS.slice(0, items.length);
-
-  if (TSP.pieChart) {
-    // Live-update chart data without destroying/recreating (smooth)
-    TSP.pieChart.data.labels = labels;
-    TSP.pieChart.data.datasets[0].data = values;
-    TSP.pieChart.data.datasets[0].backgroundColor = colors;
-    TSP.pieChart.update('none'); // 'none' = no animation for live updates
-  } else {
-    const ctx = document.getElementById('pieChart').getContext('2d');
-    TSP.pieChart = new Chart(ctx, {
-      type: 'doughnut',
-      data: { labels, datasets:[{ data:values, backgroundColor:colors, borderColor:'var(--s1)', borderWidth:2, hoverOffset:6 }] },
-      options: {
-        responsive: false,
-        plugins: {
-          legend: { display:false },
-          tooltip: { callbacks: { label: c => {
-            const p = (c.parsed/totVal*100).toFixed(1);
-            return ` ${c.label}: A$${f2(c.parsed)} (${p}%)`;
-          }}}
-        }
-      }
-    });
-  }
-
-  // Legend with P&L per asset
-  document.getElementById('portLegend').innerHTML = items.map((it,i) => {
-    const pct = (it.val/totVal*100).toFixed(1);
-    const ret = it.buyP > 0 ? ((it.curP-it.buyP)/it.buyP*100) : null;
-    return `<div class="leg-row">
-      <div class="leg-dot" style="background:${CHART_COLORS[i]}"></div>
-      <div style="flex:1">
-        <span style="font-weight:700">${it.sym}</span>
-        <span style="color:var(--text3);font-size:10px"> · ${pct}% · A$${f2(it.val)}</span>
-      </div>
-      <div style="text-align:right">
-        ${ret!==null ? `<span class="${gc(ret)}" style="font-weight:700;font-size:11px">${gs(ret)}${f2(ret)}%</span>` : '<span style="color:var(--text3)">—</span>'}
-        <div style="font-size:10px;color:var(--text3)">A$${fPrice(it.curP)}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  if (!silent) showToast('INFO','Portfolio calculated',`Total: A$${f2(totVal)} · P&L: ${gs(pnl)}A$${f2(Math.abs(pnl))}`);
-}
-
 let countdownTimer;
 function startCountdown() {
   clearInterval(countdownTimer);
@@ -465,8 +202,9 @@ async function refreshPage() {
 
 async function bootDashboard() {
   document.getElementById('appShell').style.display = 'flex';
-  loadPortfolio();
+  updateQuickLinks();
   await Promise.all([fetchAUD(), fetchCrypto(), fetchAllStocks(), fetchASX()]);
+  updateQuickLinks();
   startCountdown();
   showToast('INFO','TradeSignal Pro','Live data loaded · Click any signal for detailed analysis');
 }

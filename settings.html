@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings — TradeSignal Pro</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="loginMount"></div>
+<div id="toasts"></div>
+
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div id="topbarMount"></div>
+    <div class="content">
+
+      <div class="settings-grid">
+
+        <!-- Account -->
+        <div class="settings-section">
+          <div class="settings-section-title">Account</div>
+          <div class="settings-row">
+            <div class="settings-label">Username</div>
+            <input class="settings-input" id="setUsername" type="text" readonly style="opacity:.6;cursor:default">
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">New Password</div>
+            <input class="settings-input" id="setNewPass" type="password" placeholder="Enter new password (min 6 chars)">
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">Confirm Password</div>
+            <input class="settings-input" id="setConfPass" type="password" placeholder="Repeat new password" onkeydown="if(event.key==='Enter')changePassword()">
+          </div>
+          <button class="settings-btn" onclick="changePassword()">Update Password</button>
+        </div>
+
+        <!-- API Keys -->
+        <div class="settings-section">
+          <div class="settings-section-title">API Keys</div>
+          <div class="settings-row">
+            <div class="settings-label">Finnhub API Key <span style="font-weight:400;text-transform:none;font-size:10px">(US Stocks)</span></div>
+            <input class="settings-input" id="setFinnhub" type="text" placeholder="Paste your Finnhub key…">
+            <div style="font-size:10px;color:var(--text3);margin-top:4px">
+              Free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a> · Required for US stock data
+            </div>
+          </div>
+          <button class="settings-btn" onclick="saveFinnhubKey()">Save API Key</button>
+        </div>
+
+        <!-- Notifications & Display -->
+        <div class="settings-section">
+          <div class="settings-section-title">Notifications &amp; Display</div>
+          <div class="settings-row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div style="flex:1">
+              <div class="settings-label">Push Alerts</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:3px">Browser notifications when a BUY or SELL signal fires</div>
+              <div id="notifStatus" style="font-size:10px;color:var(--text3);margin-top:4px"></div>
+            </div>
+            <button id="settingsNotifBtn" class="settings-btn" onclick="toggleSettingsNotif()" style="margin-top:0;min-width:90px;flex-shrink:0">Enable</button>
+          </div>
+          <div class="settings-row" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-top:16px">
+            <div style="flex:1">
+              <div class="settings-label">Theme</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:3px">Toggle between dark and light mode</div>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme();updateThemeDisplay()" style="border-radius:4px;flex-shrink:0;margin-top:4px">
+              <div class="theme-toggle-track"><div class="theme-toggle-thumb"></div></div>
+              <span class="theme-label" id="settingsThemeLabel">Dark</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Data & Privacy -->
+        <div class="settings-section">
+          <div class="settings-section-title">Data &amp; Privacy</div>
+          <div class="settings-row">
+            <div class="settings-label">Signal History</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:8px" id="sigLogCount">—</div>
+            <button class="settings-btn danger" onclick="if(confirm('Clear all signal history?')){clearSignalLog();refreshDataInfo();showToast('INFO','Cleared','Signal history deleted')}">Clear Signal History</button>
+          </div>
+          <div class="settings-row" style="margin-top:16px">
+            <div class="settings-label">Portfolio Data</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Your saved portfolio positions</div>
+            <button class="settings-btn danger" onclick="if(confirm('Clear your saved portfolio? This cannot be undone.')){clearPortfolioData();showToast('INFO','Cleared','Portfolio data deleted')}">Clear Portfolio</button>
+          </div>
+          <div class="settings-row" style="margin-top:16px">
+            <div class="settings-label">Watchlist</div>
+            <div style="font-size:11px;color:var(--text2);margin-bottom:8px" id="watchCount">—</div>
+            <button class="settings-btn danger" onclick="if(confirm('Clear your entire watchlist?')){saveWatchlistData([]);refreshDataInfo();showToast('INFO','Cleared','Watchlist cleared')}">Clear Watchlist</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="font-size:10px;color:var(--text3);text-align:center;padding:16px 0">
+        TradeSignal Pro · All data stored locally in your browser · Nothing leaves your device · Not financial advice
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+function portSaveKey() { const s=getSession(); return s?`tsp_port_${s.username}`:'tsp_port_guest'; }
+function clearPortfolioData() { localStorage.removeItem(portSaveKey()); refreshDataInfo(); }
+
+function loadSettingsData() {
+  const session = getSession();
+  if (!session) return;
+  const users = getUsers();
+  const user  = users[session.username] || {};
+  document.getElementById('setUsername').value = session.username;
+  document.getElementById('setFinnhub').value  = user.finnhubKey || '';
+  updateNotifBtn();
+  updateThemeDisplay();
+  refreshDataInfo();
+}
+
+function updateNotifBtn() {
+  const btn    = document.getElementById('settingsNotifBtn');
+  const status = document.getElementById('notifStatus');
+  const perm   = Notification.permission;
+  if (TSP.notifOn && perm==='granted') {
+    if (btn) { btn.textContent='Enabled ✓'; btn.style.background='var(--green)'; }
+    if (status) status.textContent = 'Active — you will receive browser notifications';
+  } else if (perm==='denied') {
+    if (btn) { btn.textContent='Blocked'; btn.style.background='var(--red)'; }
+    if (status) status.textContent = 'Blocked in browser — enable in site settings to use alerts';
+  } else {
+    if (btn) { btn.textContent='Enable'; btn.style.background=''; }
+    if (status) status.textContent = 'Click to request browser notification permission';
+  }
+}
+
+async function toggleSettingsNotif() {
+  await toggleNotifications();
+  updateNotifBtn();
+}
+
+function updateThemeDisplay() {
+  const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+  const lbl = document.getElementById('settingsThemeLabel');
+  if (lbl) lbl.textContent = theme==='dark' ? 'Dark' : 'Light';
+}
+
+function refreshDataInfo() {
+  const log   = getSignalLog();
+  const watch = getWatchlist();
+  const sigEl  = document.getElementById('sigLogCount');
+  const watEl  = document.getElementById('watchCount');
+  if (sigEl) sigEl.textContent = `${log.length} signal change${log.length!==1?'s':''} recorded`;
+  if (watEl) watEl.textContent = `${watch.length} asset${watch.length!==1?'s':''} in your watchlist`;
+}
+
+async function changePassword() {
+  const np = document.getElementById('setNewPass').value;
+  const cp = document.getElementById('setConfPass').value;
+  if (!np || np.length < 6) { showToast('INFO','⚠ Too short','Password must be at least 6 characters'); return; }
+  if (np !== cp) { showToast('INFO','⚠ Mismatch','Passwords do not match'); return; }
+  const session = getSession(); if (!session) return;
+  const users = getUsers();
+  users[session.username].hash = await hashPass(np);
+  saveUsers(users);
+  document.getElementById('setNewPass').value = '';
+  document.getElementById('setConfPass').value = '';
+  showToast('INFO','✅ Password updated','Your new password is active');
+}
+
+function saveFinnhubKey() {
+  const k = document.getElementById('setFinnhub').value.trim();
+  if (!k) { showToast('INFO','No key','Paste your Finnhub API key first'); return; }
+  localStorage.setItem('finnhub_key', k);
+  const session = getSession();
+  if (session) { const users=getUsers(); if(users[session.username]){users[session.username].finnhubKey=k; saveUsers(users);} }
+  showToast('INFO','✅ API key saved','US stock data will use this key on next load');
+}
+
+async function bootDashboard() {
+  document.getElementById('appShell').style.display='flex';
+  loadSettingsData();
+}
+
+function refreshPage() { loadSettingsData(); showToast('INFO','Settings refreshed',''); }
+
+document.getElementById('loginMount').innerHTML  = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('settings.html');
+document.getElementById('topbarMount').innerHTML  = renderTopbar('Settings');
+initAuth();
+</script>
+</body>
+</html>

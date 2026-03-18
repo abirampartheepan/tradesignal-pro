@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watchlist — TradeSignal Pro</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="loginMount"></div>
+<div id="toasts"></div>
+
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div id="topbarMount"></div>
+    <div class="content">
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">My Watchlist</div>
+            <div class="panel-meta">Assets you've starred · Click ★ on any asset row in Crypto, US Stocks or ASX to add · Updates live</div>
+          </div>
+        </div>
+        <div id="watchlistContent">
+          <div class="loading"><div class="spinner"></div> Loading…</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+function renderWatchlist() {
+  const list = getWatchlist();
+  const el = document.getElementById('watchlistContent');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">☆</div>
+      <div class="empty-state-title">Your watchlist is empty</div>
+      <div class="empty-state-sub">Click the ★ star next to any asset on the Crypto, US Stocks, or ASX pages to add it here</div>
+    </div>`;
+    return;
+  }
+
+  const items = [];
+  list.forEach(sym => {
+    const coin = TSP.cryptoData.find(c => c.symbol.toUpperCase() === sym);
+    if (coin) {
+      const sp = coin.sparkline_in_7d?.price || [];
+      const rsi = calcRSI(sp);
+      const sig = getSignal(rsi, coin.price_change_percentage_24h, coin.price_change_percentage_7d_in_currency);
+      items.push({ sym, name: coin.name, type:'Crypto', price: coin.current_price, audPrice: coin.current_price*TSP.audRate, c24: coin.price_change_percentage_24h, rsi, sig, image: coin.image });
+      return;
+    }
+    const us = TSP.usData.find(s => s.symbol === sym);
+    if (us) {
+      const c24 = us.regularMarketChangePercent||0;
+      const hi=us.fiftyTwoWeekHigh||us.regularMarketPrice, lo=us.fiftyTwoWeekLow||us.regularMarketPrice;
+      const rsi = cl(((hi-lo)>0?((us.regularMarketPrice-lo)/(hi-lo))*100:50)*0.7+(c24>0?10:-10)+15,5,95);
+      items.push({ sym, name: us.shortName||sym, type:'US Stock', price: us.regularMarketPrice, audPrice: us.regularMarketPrice*TSP.audRate, c24, rsi, sig: getSignal(rsi,c24,null) });
+      return;
+    }
+    const asx = TSP.asxData.find(s => s.symbol === sym);
+    if (asx) {
+      const c24 = asx.regularMarketChangePercent||0;
+      const hi=asx.fiftyTwoWeekHigh||asx.regularMarketPrice, lo=asx.fiftyTwoWeekLow||asx.regularMarketPrice;
+      const rsi = cl(((hi-lo)>0?((asx.regularMarketPrice-lo)/(hi-lo))*100:50)*0.7+(c24>0?10:-10)+15,5,95);
+      items.push({ sym, name: asx.shortName||sym, type:'ASX', price: asx.regularMarketPrice, audPrice: asx.regularMarketPrice, c24, rsi, sig: getSignal(rsi,c24,null) });
+      return;
+    }
+    items.push({ sym, name: STOCK_NAMES[sym]||sym, type:'—', price: null, audPrice: null, c24: null, rsi: null, sig:{s:'—',why:'Loading…',str:0} });
+  });
+
+  el.innerHTML = `<table class="data-tbl">
+    <thead><tr>
+      <th>Asset</th><th>Type</th>
+      <th class="r">Price</th><th class="r">AUD</th>
+      <th class="r">24h</th><th>Trend RSI</th>
+      <th>Signal</th><th style="text-align:center">Remove</th>
+    </tr></thead>
+    <tbody>${items.map(i => {
+      const rsiColor = i.rsi ? (i.rsi<35?'var(--green)':i.rsi>65?'var(--red)':'var(--amber)') : 'var(--text3)';
+      const ad = i.price ? { name:i.name, type:i.type, rsi:i.rsi, c24:i.c24, c7:null, signal:i.sig.s, str:i.sig.str||0, price:i.price, audPrice:i.audPrice, high52:null, low52:null } : null;
+      return `<tr ${ad?`onclick="openModal(${JSON.stringify(ad).replace(/"/g,'&quot;')})" style="cursor:pointer"`:''}">
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${i.image?`<img src="${i.image}" width="22" height="22" style="border-radius:50%" onerror="this.style.display='none'">`:''}
+            <div><div class="asset-name">${i.name}</div><div class="asset-sub">${i.sym}</div></div>
+          </div>
+        </td>
+        <td style="font-size:10px;color:var(--text3)">${i.type}</td>
+        <td class="r mono">${i.price?'$'+fPrice(i.price):'<span style="color:var(--text3)">Loading…</span>'}</td>
+        <td class="r mono">${i.audPrice?'A$'+fPrice(i.audPrice):'—'}</td>
+        <td class="r">${i.c24!=null?chgBadge(i.c24):'—'}</td>
+        <td>${i.rsi?`<div class="rsi-wrap"><span class="rsi-val" style="color:${rsiColor}">${f2(i.rsi,1)}</span><div class="rsi-bar"><div class="rsi-fill" style="width:${cl(i.rsi,0,100)}%;background:${rsiColor}"></div></div></div>`:'<span style="color:var(--text3)">—</span>'}</td>
+        <td><span class="signal-badge ${i.sig.s}">${i.sig.s==='BUY'?'▲':i.sig.s==='SELL'?'▼':'●'} ${i.sig.s}</span></td>
+        <td style="text-align:center"><button class="star-btn active" data-sym="${i.sym}" style="font-size:16px" onclick="event.stopPropagation();toggleWatchlist('${i.sym}');setTimeout(renderWatchlist,50)" title="Remove from watchlist">★</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+let countdownTimer;
+function startCountdown() {
+  clearInterval(countdownTimer); TSP.countdown=REFRESH_SEC;
+  countdownTimer=setInterval(()=>{ TSP.countdown--; const el=document.getElementById('countdown'); if(el)el.textContent=TSP.countdown+'s'; if(TSP.countdown<=0){refreshPage();TSP.countdown=REFRESH_SEC;} },1000);
+}
+
+async function refreshPage() {
+  const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  renderWatchlist(); if(btn)btn.textContent='⟳ Refresh'; startCountdown();
+}
+
+async function bootDashboard() {
+  document.getElementById('appShell').style.display='flex';
+  renderWatchlist();
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  renderWatchlist();
+  startCountdown();
+}
+
+document.getElementById('loginMount').innerHTML  = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('watchlist.html');
+document.getElementById('topbarMount').innerHTML  = renderTopbar('Watchlist');
+initAuth();
+</script>
+</body>
+</html>

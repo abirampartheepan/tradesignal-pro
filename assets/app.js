@@ -23,6 +23,32 @@ const STOCK_NAMES = {
 
 const CHART_COLORS = ['#3b82c4','#2a9d5c','#c0392b','#c49a2e','#8b5cf6','#e97316','#06b6d4','#ec4899','#84cc16','#f43f5e','#a855f7','#14b8a6','#fb923c','#a3e635','#e879f9'];
 
+// ── WATCHLIST ────────────────────────────────────────
+function watchKey()        { const s=getSession(); return s?`tsp_watch_${s.username}`:'tsp_watch_guest'; }
+function getWatchlist()    { try{return JSON.parse(localStorage.getItem(watchKey())||'[]');}catch{return[];} }
+function saveWatchlistData(l){ localStorage.setItem(watchKey(),JSON.stringify(l)); }
+function isWatched(sym)    { return getWatchlist().includes(sym); }
+function toggleWatchlist(sym){
+  let list = getWatchlist();
+  const adding = !list.includes(sym);
+  list = adding ? [...list,sym] : list.filter(s=>s!==sym);
+  saveWatchlistData(list);
+  document.querySelectorAll(`.star-btn[data-sym]`).forEach(btn=>{
+    if(btn.dataset.sym===sym){ btn.classList.toggle('active',adding); btn.title=adding?'Remove from watchlist':'Add to watchlist'; }
+  });
+  showToast('INFO', adding?'★ Added to Watchlist':'☆ Removed from Watchlist', sym);
+}
+
+// ── SIGNAL LOG ───────────────────────────────────────
+function sigLogKey()   { const s=getSession(); return s?`tsp_siglog_${s.username}`:'tsp_siglog_guest'; }
+function getSignalLog(){ try{return JSON.parse(localStorage.getItem(sigLogKey())||'[]');}catch{return[];} }
+function appendSignalLog(entry){
+  const log=getSignalLog(); log.unshift(entry);
+  if(log.length>300) log.pop();
+  localStorage.setItem(sigLogKey(),JSON.stringify(log));
+}
+function clearSignalLog(){ localStorage.removeItem(sigLogKey()); }
+
 // ── GLOBAL STATE ────────────────────────────────────
 window.TSP = window.TSP || {
   cryptoData: [],
@@ -431,8 +457,10 @@ function renderStocks(type, data, elId) {
       };
       return `<tr onclick="openModal(${JSON.stringify(assetData).replace(/"/g,'&quot;')})">
         <td>
-          <div class="asset-name">${s.shortName || s.symbol}</div>
-          <div class="asset-sub">${s.symbol}</div>
+          <div style="display:flex;align-items:center;gap:7px">
+            <button class="star-btn ${isWatched(s.symbol)?'active':''}" data-sym="${s.symbol}" onclick="event.stopPropagation();toggleWatchlist('${s.symbol}')" title="${isWatched(s.symbol)?'Remove from watchlist':'Add to watchlist'}">★</button>
+            <div><div class="asset-name">${s.shortName || s.symbol}</div><div class="asset-sub">${s.symbol}</div></div>
+          </div>
         </td>
         <td class="r mono">$${fPrice(s.regularMarketPrice)}</td>
         ${type==='us' ? `<td class="r mono" style="color:var(--text2)">A$${fPrice(s.audP)}</td>` : ''}
@@ -558,9 +586,11 @@ function detectChanges(rows, market) {
     if (old && old !== nw && (nw === 'BUY' || nw === 'SELL')) {
       const name = r.name || r.shortName || r.symbol;
       const price = r.current_price || r.regularMarketPrice;
-      showToast(nw, `${nw==='BUY'?'▲ BUY':'▼ SELL'}: ${name}`, `Signal changed · $${fPrice(price)} · ${r.sig?.why||r.s?.why}`);
+      const why = r.sig?.why || r.s?.why || '';
+      showToast(nw, `${nw==='BUY'?'▲ BUY':'▼ SELL'}: ${name}`, `Signal changed · $${fPrice(price)} · ${why}`);
       if (TSP.notifOn && Notification.permission === 'granted')
-        new Notification(`${nw}: ${name}`, { body: `$${fPrice(price)} · ${r.sig?.why||r.s?.why}` });
+        new Notification(`${nw}: ${name}`, { body: `$${fPrice(price)} · ${why}` });
+      appendSignalLog({ ts: Date.now(), sym: r.symbol||r.id, name, market: market.toUpperCase(), signal: nw, price: price||0, why });
     }
     if (nw) TSP.prevSigs[key] = nw;
   });
@@ -738,26 +768,38 @@ function renderLoginScreen() {
 
 // ── SHARED SIDEBAR HTML ──────────────────────────────
 function renderSidebar(activePage) {
-  const pages = [
-    { href:'index.html', icon:'◈', label:'Overview' },
-    { href:'crypto.html', icon:'₿', label:'Cryptocurrency' },
-    { href:'us.html', icon:'$', label:'US Stocks' },
-    { href:'asx.html', icon:'A', label:'ASX Stocks' },
+  const sections = [
+    { label:'Markets', pages:[
+      { href:'index.html',     icon:'◈', label:'Overview' },
+      { href:'crypto.html',    icon:'₿', label:'Cryptocurrency' },
+      { href:'us.html',        icon:'$', label:'US Stocks' },
+      { href:'asx.html',       icon:'A', label:'ASX Stocks' },
+    ]},
+    { label:'Tools', pages:[
+      { href:'watchlist.html', icon:'★', label:'Watchlist' },
+      { href:'portfolio.html', icon:'◎', label:'Portfolio' },
+      { href:'signals.html',   icon:'◉', label:'Signal History' },
+      { href:'news.html',      icon:'◫', label:'News Feed' },
+    ]},
+    { label:'Account', pages:[
+      { href:'settings.html',  icon:'⚙', label:'Settings' },
+    ]},
   ];
+  const nav = sections.map(sec=>`
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">${sec.label}</div>
+      ${sec.pages.map(p=>`
+        <a href="${p.href}" class="nav-item ${activePage===p.href?'active':''}">
+          <span class="nav-icon">${p.icon}</span>${p.label}
+        </a>`).join('')}
+    </div>`).join('');
   return `
   <aside class="sidebar">
     <div class="sidebar-logo">
       <div class="sidebar-logo-mark">TradeSignal<span>Pro</span></div>
       <div class="sidebar-logo-sub">Market Signal Dashboard</div>
     </div>
-    <div class="sidebar-section">
-      <div class="sidebar-section-label">Markets</div>
-      ${pages.map(p => `
-        <a href="${p.href}" class="nav-item ${activePage===p.href?'active':''}">
-          <span class="nav-icon">${p.icon}</span>
-          ${p.label}
-        </a>`).join('')}
-    </div>
+    ${nav}
     <div class="sidebar-bottom">
       <div class="user-item">
         <div class="user-avatar">--</div>

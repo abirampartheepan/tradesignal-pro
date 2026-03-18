@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>News Feed — TradeSignal Pro</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="loginMount"></div>
+<div id="toasts"></div>
+
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div id="topbarMount"></div>
+    <div class="content">
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Financial News Feed</div>
+            <div class="panel-meta">Headlines from major financial sources · Click any article to read · Auto-refreshes every 60s</div>
+          </div>
+          <div class="tab-group">
+            <div class="tab active" id="tab-all"    onclick="loadNews('all',this)">All</div>
+            <div class="tab"        id="tab-crypto" onclick="loadNews('crypto',this)">Crypto</div>
+            <div class="tab"        id="tab-us"     onclick="loadNews('us',this)">US Markets</div>
+            <div class="tab"        id="tab-asx"    onclick="loadNews('asx',this)">ASX / AUS</div>
+          </div>
+        </div>
+        <div id="newsGrid" class="news-grid">
+          <div class="loading" style="grid-column:1/-1"><div class="spinner"></div> Loading news…</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+const NEWS_FEEDS = {
+  crypto: [
+    { label:'CoinDesk',       url:'https://www.coindesk.com/arc/outboundfeeds/rss/' },
+    { label:'Cointelegraph',  url:'https://cointelegraph.com/rss' },
+  ],
+  us: [
+    { label:'Yahoo Finance',  url:'https://finance.yahoo.com/news/rssindex' },
+    { label:'Reuters Biz',    url:'https://feeds.reuters.com/reuters/businessNews' },
+  ],
+  asx: [
+    { label:'ABC Business',   url:'https://www.abc.net.au/news/feed/51892/rss.xml' },
+    { label:'Yahoo AU',       url:'https://au.finance.yahoo.com/news/rssindex' },
+  ],
+};
+
+async function fetchFeed(feedUrl, label) {
+  const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(feedUrl)}`;
+  try {
+    const r = await fetch(proxy, { signal: AbortSignal.timeout(7000) });
+    if (!r.ok) return [];
+    const d = await r.json();
+    const xml = new DOMParser().parseFromString(d.contents, 'text/xml');
+    return [...xml.querySelectorAll('item')].slice(0,8).map(item => {
+      const link = item.querySelector('link')?.textContent?.trim() ||
+                   item.querySelector('link')?.nextSibling?.textContent?.trim() || '#';
+      return {
+        title: item.querySelector('title')?.textContent?.trim() || '',
+        link,
+        desc: (item.querySelector('description')?.textContent||'').replace(/<[^>]+>/g,'').trim().slice(0,130),
+        date: item.querySelector('pubDate')?.textContent || '',
+        source: label,
+      };
+    }).filter(a => a.title && a.link !== '#');
+  } catch { return []; }
+}
+
+let currentTab = 'all';
+
+async function loadNews(type, tabEl) {
+  currentTab = type;
+  document.querySelectorAll('.tab-group .tab').forEach(t => t.classList.remove('active'));
+  if (tabEl) tabEl.classList.add('active');
+  document.getElementById('newsGrid').innerHTML = '<div class="loading" style="grid-column:1/-1"><div class="spinner"></div> Loading news…</div>';
+  const feeds = type==='all' ? [...NEWS_FEEDS.crypto,...NEWS_FEEDS.us,...NEWS_FEEDS.asx] : (NEWS_FEEDS[type]||[]);
+  const results = await Promise.all(feeds.map(f => fetchFeed(f.url, f.label)));
+  const articles = results.flat().filter(a=>a.title).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  renderNews(articles);
+}
+
+function renderNews(articles) {
+  const el = document.getElementById('newsGrid');
+  if (!articles.length) {
+    el.innerHTML = `<div class="loading" style="grid-column:1/-1;color:var(--text3)">⚠ Could not load news — RSS feeds may be temporarily unavailable. Try refreshing.</div>`;
+    return;
+  }
+  el.innerHTML = articles.map(a => {
+    const d = a.date ? new Date(a.date) : null;
+    const ts = d && !isNaN(d) ? d.toLocaleDateString('en-AU',{month:'short',day:'numeric'}) + ' · ' + d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `<a class="news-card" href="${a.link}" target="_blank" rel="noopener noreferrer">
+      <div class="news-label">${a.source}</div>
+      <div class="news-title">${a.title}</div>
+      ${a.desc ? `<div style="font-size:11px;color:var(--text2);line-height:1.5">${a.desc}…</div>` : ''}
+      <div class="news-meta">${ts}</div>
+    </a>`;
+  }).join('');
+}
+
+let countdownTimer;
+function startCountdown() {
+  clearInterval(countdownTimer); TSP.countdown=REFRESH_SEC;
+  countdownTimer=setInterval(()=>{ TSP.countdown--; const el=document.getElementById('countdown'); if(el)el.textContent=TSP.countdown+'s'; if(TSP.countdown<=0){refreshPage();TSP.countdown=REFRESH_SEC;} },1000);
+}
+
+async function refreshPage() {
+  const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
+  await loadNews(currentTab, document.getElementById(`tab-${currentTab}`));
+  if(btn)btn.textContent='⟳ Refresh'; startCountdown();
+}
+
+async function bootDashboard() {
+  document.getElementById('appShell').style.display='flex';
+  await loadNews('all', document.getElementById('tab-all'));
+  startCountdown();
+}
+
+document.getElementById('loginMount').innerHTML  = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('news.html');
+document.getElementById('topbarMount').innerHTML  = renderTopbar('News Feed');
+initAuth();
+</script>
+</body>
+</html>

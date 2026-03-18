@@ -126,7 +126,8 @@ function renderCrypto() {
       return `<tr onclick="openModal(${JSON.stringify(assetData).replace(/"/g,'&quot;')})">
         <td style="color:var(--text3)">${c.market_cap_rank}</td>
         <td>
-          <div style="display:flex;align-items:center;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="star-btn ${isWatched(c.symbol.toUpperCase())?'active':''}" data-sym="${c.symbol.toUpperCase()}" onclick="event.stopPropagation();toggleWatchlist('${c.symbol.toUpperCase()}')" title="${isWatched(c.symbol.toUpperCase())?'Remove from watchlist':'Add to watchlist'}">★</button>
             <img src="${c.image}" width="24" height="24" style="border-radius:50%" onerror="this.style.display='none'">
             <div>
               <div class="asset-name">${c.name}</div>

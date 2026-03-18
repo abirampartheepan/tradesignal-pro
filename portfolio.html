@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio — TradeSignal Pro</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="loginMount"></div>
+<div id="toasts"></div>
+
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
+  <div class="main">
+    <div id="topbarMount"></div>
+    <div class="content">
+      <div class="disclaimer">
+        <strong>Portfolio Calculator:</strong> Track your holdings across all 45 assets.
+        Live prices update every 60s. Click <strong>💾 Save Portfolio</strong> to persist your positions.
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Portfolio Calculator</div>
+            <div class="panel-meta">45 assets available (Crypto + US + ASX) · Prices update live · Saved per account</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div id="portLiveTag" style="display:none;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--green);border:1px solid var(--gborder);padding:3px 8px;border-radius:3px">● Live</div>
+            <button class="btn-add" onclick="addPortRow()">+ Add Position</button>
+            <button class="btn-save" id="saveBtn" onclick="manualSave()">💾 Save Portfolio</button>
+          </div>
+        </div>
+        <div class="port-grid">
+          <div class="port-left">
+            <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 32px;gap:8px;margin-bottom:8px;padding:0 2px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Asset</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Quantity</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Buy Price (AUD)</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Live Price (AUD)</div>
+              <div></div>
+            </div>
+            <div id="portRows"></div>
+            <button class="btn-calc" onclick="calcPortfolio()">Calculate Portfolio Value</button>
+            <div class="port-totals" id="portTotals" style="display:none">
+              <div class="pt-item"><div class="pt-lbl">Total Value (AUD)</div><div class="pt-val b" id="ptTotal">—</div></div>
+              <div class="pt-item"><div class="pt-lbl">Profit / Loss</div><div class="pt-val" id="ptChange">—</div></div>
+              <div class="pt-item"><div class="pt-lbl">Best Performer</div><div class="pt-val g" id="ptBest">—</div></div>
+            </div>
+          </div>
+          <div class="port-right">
+            <div class="chart-label">Allocation by Value</div>
+            <canvas id="pieChart" width="280" height="280"></canvas>
+            <div class="port-legend" id="portLegend">
+              <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:16px">Add assets and calculate to view chart</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+// ── PORTFOLIO PERSISTENCE ─────────────────────────────
+function portSaveKey() {
+  const s = getSession();
+  return s ? `tsp_port_${s.username}` : 'tsp_port_guest';
+}
+
+function savePortfolio() {
+  if (TSP._portLoading) return;
+  const rows = document.querySelectorAll('[id^="pr-"]');
+  const data = [];
+  rows.forEach(row => {
+    const id   = row.id.replace('pr-','');
+    const sym  = document.getElementById(`pSym-${id}`)?.value || '';
+    const qty  = document.getElementById(`pQty-${id}`)?.value || '';
+    const buyP = document.getElementById(`pBuy-${id}`)?.value || '';
+    const curEl= document.getElementById(`pCur-${id}`);
+    const customPrice = (sym === 'CUSTOM' && curEl && !curEl.readOnly) ? curEl.value : '';
+    if (sym) data.push({ sym, qty, buyP, customPrice });
+  });
+  try { localStorage.setItem(portSaveKey(), JSON.stringify(data)); } catch {}
+}
+
+function manualSave() {
+  savePortfolio();
+  const btn = document.getElementById('saveBtn');
+  if (btn) { btn.textContent = '✓ Saved!'; btn.style.borderColor = 'var(--green)'; btn.style.color = 'var(--green)'; }
+  showToast('INFO', '💾 Portfolio saved', 'Your positions are saved to your account');
+  setTimeout(() => { if(btn){ btn.textContent='💾 Save Portfolio'; btn.style.borderColor=''; btn.style.color=''; } }, 2500);
+}
+
+function loadPortfolio() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(portSaveKey()) || 'null'); } catch {}
+  TSP._portLoading = true;
+  if (!data || !data.length) {
+    addPortRow(); addPortRow(); addPortRow();
+  } else {
+    data.forEach(item => {
+      addPortRow();
+      const id = TSP.portRowId;
+      const symEl = document.getElementById(`pSym-${id}`);
+      const qtyEl = document.getElementById(`pQty-${id}`);
+      const buyEl = document.getElementById(`pBuy-${id}`);
+      if (symEl) symEl.value = item.sym;
+      if (qtyEl) qtyEl.value = item.qty;
+      if (buyEl) buyEl.value = item.buyP;
+      autoPrice(id);
+      if (item.sym === 'CUSTOM' && item.customPrice) {
+        const curEl = document.getElementById(`pCur-${id}`);
+        if (curEl) { curEl.value = item.customPrice; curEl._num = parseFloat(item.customPrice)||null; }
+      }
+    });
+  }
+  TSP._portLoading = false;
+}
+
+// ── PORTFOLIO FUNCTIONS ───────────────────────────────
+function getLivePrice(sym) {
+  if (!sym || sym === 'CUSTOM') return null;
+  const coin = TSP.cryptoData.find(c => c.symbol.toUpperCase() === sym || c.id === sym.toLowerCase());
+  if (coin) return coin.current_price * TSP.audRate;
+  const us = TSP.usData.find(s => s.symbol === sym);
+  if (us) return us.regularMarketPrice * TSP.audRate;
+  const asx = TSP.asxData.find(s => s.symbol === sym);
+  if (asx) return asx.regularMarketPrice;
+  return null;
+}
+
+function buildPortOptions() {
+  const cryptoOpts = TSP.cryptoData.length
+    ? TSP.cryptoData.map(c=>`<option value="${c.symbol.toUpperCase()}">${c.name} (${c.symbol.toUpperCase()})</option>`).join('')
+    : '<option disabled>Loading crypto…</option>';
+  const usOpts  = US_SYMS.map(s=>`<option value="${s}">${STOCK_NAMES[s]||s} (${s})</option>`).join('');
+  const asxOpts = ASX_SYMS.map(s=>`<option value="${s}">${STOCK_NAMES[s]||s} (${s.replace('.AX','')})</option>`).join('');
+  return `<option value="">Select asset…</option>
+    <optgroup label="── Cryptocurrency (Top 15)">${cryptoOpts}</optgroup>
+    <optgroup label="── US Stocks (NYSE / NASDAQ)">${usOpts}</optgroup>
+    <optgroup label="── ASX Stocks (Australia)">${asxOpts}</optgroup>
+    <option value="CUSTOM">✏ Custom / Manual Price</option>`;
+}
+
+function refreshPortfolioSelects() {
+  const opts = buildPortOptions();
+  document.querySelectorAll('[id^="pSym-"]').forEach(sel => {
+    const cur = sel.value; sel.innerHTML = opts; sel.value = cur;
+  });
+}
+
+function refreshPortfolioPrices() {
+  refreshPortfolioSelects();
+  let anyUpdated = false;
+  document.querySelectorAll('[id^="pr-"]').forEach(row => {
+    const id  = row.id.replace('pr-','');
+    const sym = document.getElementById(`pSym-${id}`)?.value;
+    if (!sym || sym === 'CUSTOM') return;
+    const price = getLivePrice(sym);
+    const el = document.getElementById(`pCur-${id}`);
+    if (el && price) { el.value = 'A$'+fPrice(price); el._num = price; anyUpdated = true; }
+  });
+  if (anyUpdated) {
+    const tag = document.getElementById('portLiveTag');
+    if (tag) tag.style.display = 'block';
+  }
+  if (anyUpdated && TSP.portfolioCalculated) calcPortfolio(true);
+}
+
+function addPortRow() {
+  TSP.portRowId++;
+  const id = TSP.portRowId;
+  const row = document.createElement('div');
+  row.className = 'port-row'; row.id = `pr-${id}`;
+  row.innerHTML = `
+    <div class="fg">
+      <select id="pSym-${id}" onchange="autoPrice(${id});savePortfolio()">
+        ${buildPortOptions()}
+      </select>
+    </div>
+    <div class="fg"><input type="number" id="pQty-${id}" placeholder="e.g. 0.5" min="0" step="any" oninput="savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
+    <div class="fg"><input type="number" id="pBuy-${id}" placeholder="Your buy price" min="0" step="any" oninput="savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
+    <div class="fg">
+      <input type="text" id="pCur-${id}" placeholder="Select asset…" readonly style="opacity:.7;cursor:default;font-weight:600">
+    </div>
+    <button class="btn-del" onclick="document.getElementById('pr-${id}').remove();savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)">✕</button>`;
+  document.getElementById('portRows').appendChild(row);
+}
+
+function autoPrice(id) {
+  const sym = document.getElementById(`pSym-${id}`)?.value;
+  const el  = document.getElementById(`pCur-${id}`);
+  if (!sym) { if(el){el.value='';el._num=null;} return; }
+  if (sym === 'CUSTOM') {
+    if (el) { el.value=''; el._num=null; el.removeAttribute('readonly'); el.placeholder='Enter price (AUD)'; el.style.opacity='1'; el.style.cursor='text'; }
+    el.oninput = () => { el._num=parseFloat(el.value)||null; savePortfolio(); if(TSP.portfolioCalculated)calcPortfolio(true); };
+    return;
+  }
+  if (el) { el.setAttribute('readonly',''); el.style.opacity='.7'; el.style.cursor='default'; el.placeholder='Loading…'; el.oninput=null; }
+  const price = getLivePrice(sym);
+  if (el && price) { el.value='A$'+fPrice(price); el._num=price; }
+  else if (el)     { el.value='Price loading…'; el._num=null; }
+  if (TSP.portfolioCalculated) calcPortfolio(true);
+}
+
+function calcPortfolio(silent=false) {
+  const rows = document.querySelectorAll('[id^="pr-"]');
+  if (!rows.length) { if(!silent) showToast('INFO','No assets','Add positions first'); return; }
+  const items=[]; let totVal=0,totCost=0;
+  rows.forEach(row => {
+    const id   = row.id.replace('pr-','');
+    const sym  = document.getElementById(`pSym-${id}`)?.value || '';
+    const qty  = parseFloat(document.getElementById(`pQty-${id}`)?.value)||0;
+    const buyP = parseFloat(document.getElementById(`pBuy-${id}`)?.value)||0;
+    const curEl= document.getElementById(`pCur-${id}`);
+    const curP = curEl?._num||null;
+    if (qty>0 && sym && curP) { const val=qty*curP,cost=qty*buyP; items.push({sym,qty,buyP,curP,val,cost}); totVal+=val; totCost+=cost; }
+  });
+  if (!items.length) { if(!silent) showToast('INFO','No data','Ensure assets are selected and prices have loaded'); return; }
+  TSP.portfolioCalculated = true;
+  const pnl=totVal-totCost, pnlPct=totCost>0?(pnl/totCost*100):0;
+  const best=items.reduce((a,b)=>((b.buyP>0?(b.curP-b.buyP)/b.buyP:0)>(a.buyP>0?(a.curP-a.buyP)/a.buyP:0))?b:a);
+  document.getElementById('ptTotal').textContent  = 'A$'+f2(totVal);
+  document.getElementById('ptChange').innerHTML   = `<span class="${gc(pnl)}">${gs(pnl)}A$${f2(Math.abs(pnl))} (${gs(pnlPct)}${f2(pnlPct)}%)</span>`;
+  document.getElementById('ptBest').textContent   = best.sym+(best.buyP>0?` ${gs((best.curP-best.buyP)/best.buyP*100)}${f2((best.curP-best.buyP)/best.buyP*100)}%`:'');
+  document.getElementById('portTotals').style.display = 'grid';
+  const labels=items.map(i=>i.sym), values=items.map(i=>i.val), colors=CHART_COLORS.slice(0,items.length);
+  if (TSP.pieChart) {
+    TSP.pieChart.data.labels=labels; TSP.pieChart.data.datasets[0].data=values; TSP.pieChart.data.datasets[0].backgroundColor=colors;
+    TSP.pieChart.update('none');
+  } else {
+    const ctx=document.getElementById('pieChart').getContext('2d');
+    TSP.pieChart=new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:values,backgroundColor:colors,borderColor:'var(--s1)',borderWidth:2,hoverOffset:6}]},options:{responsive:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const p=(c.parsed/totVal*100).toFixed(1);return ` ${c.label}: A$${f2(c.parsed)} (${p}%)`;}}}}}});
+  }
+  document.getElementById('portLegend').innerHTML = items.map((it,i)=>{
+    const pct=(it.val/totVal*100).toFixed(1), ret=it.buyP>0?((it.curP-it.buyP)/it.buyP*100):null;
+    return `<div class="leg-row"><div class="leg-dot" style="background:${CHART_COLORS[i]}"></div>
+      <div style="flex:1"><span style="font-weight:700">${it.sym}</span><span style="color:var(--text3);font-size:10px"> · ${pct}% · A$${f2(it.val)}</span></div>
+      <div style="text-align:right">${ret!==null?`<span class="${gc(ret)}" style="font-weight:700;font-size:11px">${gs(ret)}${f2(ret)}%</span>`:'<span style="color:var(--text3)">—</span>'}
+      <div style="font-size:10px;color:var(--text3)">A$${fPrice(it.curP)}</div></div></div>`;
+  }).join('');
+  if (!silent) showToast('INFO','Portfolio calculated',`Total: A$${f2(totVal)} · P&L: ${gs(pnl)}A$${f2(Math.abs(pnl))}`);
+}
+
+let countdownTimer;
+function startCountdown() {
+  clearInterval(countdownTimer); TSP.countdown=REFRESH_SEC;
+  countdownTimer=setInterval(()=>{ TSP.countdown--; const el=document.getElementById('countdown'); if(el)el.textContent=TSP.countdown+'s'; if(TSP.countdown<=0){refreshPage();TSP.countdown=REFRESH_SEC;} },1000);
+}
+
+async function refreshPage() {
+  const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  if(btn)btn.textContent='⟳ Refresh'; startCountdown();
+}
+
+async function bootDashboard() {
+  document.getElementById('appShell').style.display='flex';
+  loadPortfolio();
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  startCountdown();
+}
+
+document.getElementById('loginMount').innerHTML  = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('portfolio.html');
+document.getElementById('topbarMount').innerHTML  = renderTopbar('Portfolio');
+initAuth();
+</script>
+</body>
+</html>
