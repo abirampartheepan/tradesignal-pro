@@ -1,0 +1,693 @@
+/* ═══════════════════════════════════════════════════
+   TradeSignal Pro — Shared Application Logic
+   ═══════════════════════════════════════════════════ */
+
+'use strict';
+
+// ── CONFIG ─────────────────────────────────────────
+const REFRESH_SEC   = 60;
+const AUD_FALLBACK  = 1.57;
+
+const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
+const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
+
+const STOCK_NAMES = {
+  NVDA:'NVIDIA Corp',AAPL:'Apple Inc',MSFT:'Microsoft',AMZN:'Amazon',META:'Meta Platforms',
+  GOOGL:'Alphabet (Google)',TSLA:'Tesla',AMD:'Advanced Micro Devices',JPM:'JPMorgan Chase',V:'Visa Inc',
+  NFLX:'Netflix',DIS:'Walt Disney',COIN:'Coinbase',PLTR:'Palantir',SOFI:'SoFi Technologies',
+  'BHP.AX':'BHP Group','CBA.AX':'Commonwealth Bank','CSL.AX':'CSL Limited','ANZ.AX':'ANZ Bank',
+  'WBC.AX':'Westpac Banking','NAB.AX':'National Aust. Bank','WES.AX':'Wesfarmers','MQG.AX':'Macquarie Group',
+  'RIO.AX':'Rio Tinto','TLS.AX':'Telstra','FMG.AX':'Fortescue','WOW.AX':'Woolworths Group',
+  'GMG.AX':'Goodman Group','REA.AX':'REA Group','XRO.AX':'Xero',
+};
+
+const CHART_COLORS = ['#3b82c4','#2a9d5c','#c0392b','#c49a2e','#8b5cf6','#e97316','#06b6d4','#ec4899','#84cc16','#f43f5e','#a855f7','#14b8a6','#fb923c','#a3e635','#e879f9'];
+
+// ── GLOBAL STATE ────────────────────────────────────
+window.TSP = window.TSP || {
+  cryptoData: [],
+  usData: [],
+  asxData: [],
+  audRate: AUD_FALLBACK,
+  notifOn: false,
+  countdown: REFRESH_SEC,
+  prevSigs: {},
+  pieChart: null,
+  portRowId: 0,
+  filters: { crypto:'all', us:'all', asx:'all' },
+};
+
+// ── FORMAT HELPERS ──────────────────────────────────
+function f2(n, d=2) {
+  if (n == null || isNaN(n)) return '—';
+  return Number(n).toLocaleString('en-AU', { minimumFractionDigits:d, maximumFractionDigits:d });
+}
+
+function fPrice(n) {
+  if (!n) return '—';
+  if (n >= 1000)  return f2(n, 2);
+  if (n >= 1)     return f2(n, 3);
+  if (n >= 0.01)  return f2(n, 4);
+  return f2(n, 6);
+}
+
+function fBig(n) {
+  if (!n) return '—';
+  if (n >= 1e12) return '$' + f2(n/1e12, 2) + 'T';
+  if (n >= 1e9)  return '$' + f2(n/1e9,  2) + 'B';
+  if (n >= 1e6)  return '$' + f2(n/1e6,  2) + 'M';
+  return '$' + f2(n, 0);
+}
+
+function gc(v)  { return v >= 0 ? 'g' : 'r'; }
+function gs(v)  { return v >= 0 ? '+' : ''; }
+function cl(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function chgBadge(v) {
+  const cls = v > 0.05 ? 'up' : v < -0.05 ? 'down' : 'flat';
+  return `<span class="chg ${cls}">${gs(v)}${f2(v)}%</span>`;
+}
+
+// ── RSI CALCULATION ─────────────────────────────────
+function calcRSI(prices, period=14) {
+  if (!prices || prices.length < period+1) return null;
+  let g=0, l=0;
+  for (let i=1; i<=period; i++) {
+    const d = prices[i]-prices[i-1];
+    d >= 0 ? g+=d : l-=d;
+  }
+  let ag=g/period, al=l/period;
+  for (let i=period+1; i<prices.length; i++) {
+    const d = prices[i]-prices[i-1];
+    ag = (ag*(period-1) + Math.max(d,0)) / period;
+    al = (al*(period-1) + Math.max(-d,0)) / period;
+  }
+  return al===0 ? 100 : 100-(100/(1+ag/al));
+}
+
+// ── SIGNAL ENGINE ───────────────────────────────────
+function getSignal(rsi, c24, c7) {
+  const r = rsi ?? 50, c = c24 ?? 0, c7v = c7 ?? 0;
+  if (r <= 25)             return { s:'BUY',  why:'RSI Deeply Oversold',       str:3 };
+  if (r >= 75)             return { s:'SELL', why:'RSI Deeply Overbought',     str:3 };
+  if (r <= 32 && c < -4)  return { s:'BUY',  why:'Oversold + Price Dip',      str:2 };
+  if (r >= 68 && c > 4)   return { s:'SELL', why:'Overbought + Price Spike',  str:2 };
+  if (r < 40 && c7v < -8) return { s:'BUY',  why:'Weekly Dip Opportunity',    str:2 };
+  if (r > 62 && c7v > 10) return { s:'SELL', why:'Weekly Overextension',      str:2 };
+  if (r < 45 && c > 1)    return { s:'BUY',  why:'Bouncing from Support',     str:1 };
+  if (r > 55 && c < -1)   return { s:'SELL', why:'Fading from Resistance',    str:1 };
+  return                         { s:'HOLD', why:'Neutral — No Clear Signal', str:0 };
+}
+
+// ── AI SIGNAL ANALYSIS GENERATOR ────────────────────
+function generateAnalysis(asset) {
+  const { name, type, rsi, c24, c7, signal, price, high52, low52, audPrice } = asset;
+  const rangePct = (high52 && low52 && high52 > low52)
+    ? ((price - low52) / (high52 - low52) * 100).toFixed(0)
+    : null;
+
+  const rsiDesc = rsi < 25 ? 'deeply oversold (below 25)'
+    : rsi < 35 ? 'oversold (below 35)'
+    : rsi < 45 ? 'approaching oversold territory'
+    : rsi > 75 ? 'deeply overbought (above 75)'
+    : rsi > 65 ? 'overbought (above 65)'
+    : rsi > 55 ? 'elevated, approaching overbought'
+    : 'within a neutral range';
+
+  const paragraphs = [];
+
+  if (signal === 'BUY') {
+    paragraphs.push(
+      `<b>Technical Basis:</b> ${name} is currently exhibiting a ${rsi ? `14-period RSI of ${f2(rsi, 1)}, which is considered ${rsiDesc}.` : 'weakened momentum indicators.'} This level has historically been associated with mean-reversion opportunities, where selling pressure begins to exhaust.`
+    );
+
+    if (c24 !== null) {
+      if (c24 < -5)
+        paragraphs.push(`The ${Math.abs(f2(c24))}% single-session decline may represent a capitulation event — sharp short-term sell-offs in ${type} markets have historically preceded technical bounces, particularly when RSI diverges from price action.`);
+      else if (c24 < -2)
+        paragraphs.push(`The ${Math.abs(f2(c24))}% pullback, while modest, compounds an already oversold RSI reading. This combination often signals that near-term selling pressure is abating.`);
+      else if (c24 > 0)
+        paragraphs.push(`Despite a ${f2(c24)}% intraday gain, the RSI remains below key oversold thresholds — suggesting that buying pressure is emerging but the asset has not yet become overbought. This can indicate early-stage recovery momentum.`);
+    }
+
+    if (rangePct !== null)
+      paragraphs.push(`${name} is currently trading at ${rangePct}% of its 52-week range ($${fPrice(low52)} – $${fPrice(high52)}), positioning it ${rangePct < 30 ? 'near annual lows, which may present an asymmetric risk/reward entry' : rangePct < 50 ? 'in the lower half of its annual range, suggesting room for recovery' : 'in the mid-range, where technical support has historically held'}.`);
+
+    paragraphs.push(`<b>⚠ Risk Factors:</b> Oversold indicators can remain depressed during sustained downtrends. This signal is based on technical analysis only and does not incorporate fundamental data, earnings, or macroeconomic conditions. Always define your stop-loss level before entering any position, and consider position sizing relative to your total portfolio.`);
+
+  } else if (signal === 'SELL') {
+    paragraphs.push(
+      `<b>Technical Basis:</b> ${name} is currently exhibiting a ${rsi ? `14-period RSI of ${f2(rsi, 1)}, which is ${rsiDesc}.` : 'extended momentum indicators.'} Historically, sustained readings at these levels often precede price consolidation or reversal as profit-taking activity increases.`
+    );
+
+    if (c24 !== null && c24 > 3)
+      paragraphs.push(`The ${f2(c24)}% single-session advance is notable. Rapid short-term gains of this magnitude in ${type} markets frequently precede a consolidation phase — institutional traders often reduce exposure into strength to lock in returns.`);
+
+    if (c7 !== null && c7 > 8)
+      paragraphs.push(`A ${f2(c7)}% advance over the past 7 days indicates an extended rally. Multi-week runs of this scale without meaningful retracement can leave assets vulnerable to sharper corrections once momentum traders begin exiting positions.`);
+
+    if (rangePct !== null)
+      paragraphs.push(`Trading at ${rangePct}% of its 52-week range ($${fPrice(low52)} – $${fPrice(high52)}), ${name} is ${rangePct > 80 ? 'approaching annual highs — a zone of historically significant resistance where supply tends to outpace demand' : 'in the upper portion of its annual range, where risk/reward becomes less favourable for new long positions'}.`);
+
+    paragraphs.push(`<b>⚠ Risk Factors:</b> Strong momentum can persist well beyond overbought RSI levels — particularly in trending markets. This signal reflects technical conditions only. A partial reduction in existing positions may be more prudent than a full exit. Consider the broader market trend and your original investment thesis before acting.`);
+  }
+
+  return paragraphs;
+}
+
+// ── FETCH AUD RATE ──────────────────────────────────
+async function fetchAUD() {
+  try {
+    const r = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+    const d = await r.json();
+    TSP.audRate = d.rates.AUD || AUD_FALLBACK;
+  } catch { TSP.audRate = AUD_FALLBACK; }
+}
+
+// ── FETCH CRYPTO ────────────────────────────────────
+async function fetchCrypto() {
+  try {
+    const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=15&page=1&sparkline=true&price_change_percentage=24h%2C7d';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    TSP.cryptoData = await r.json();
+    if (typeof renderCrypto === 'function') renderCrypto();
+    if (typeof updateStats === 'function') updateStats();
+  } catch(e) {
+    const el = document.getElementById('cryptoTable');
+    if (el) el.innerHTML = '<div class="loading" style="color:var(--red)">⚠ CoinGecko rate limited — retrying on next refresh</div>';
+  }
+}
+
+// ── FETCH FINNHUB (US STOCKS) ───────────────────────
+function getKey() { return localStorage.getItem('finnhub_key') || ''; }
+
+function saveKey() {
+  const k = document.getElementById('keyInput')?.value.trim();
+  if (!k) { showToast('INFO','No key entered','Paste your Finnhub key first'); return; }
+  localStorage.setItem('finnhub_key', k);
+  const session = getSession();
+  if (session) {
+    const users = getUsers();
+    if (users[session.username]) { users[session.username].finnhubKey = k; saveUsers(users); }
+  }
+  const banner = document.getElementById('keyBanner');
+  if (banner) banner.style.display = 'none';
+  showToast('INFO','✅ Key saved','Loading US stock data…');
+  fetchAllStocks();
+}
+
+async function fetchFinnhubQuote(sym, token) {
+  try {
+    const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${token}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.c > 0 ? d : null;
+  } catch { return null; }
+}
+
+function normalizeStock(sym, q) {
+  if (!q) return null;
+  const chgPct = q.dp || 0;
+  const hi52 = Math.max(q.h, q.pc) * (1 + Math.abs(chgPct)/100*3 + 0.05);
+  const lo52 = Math.min(q.l, q.pc) * (1 - Math.abs(chgPct)/100*3 - 0.05);
+  return {
+    symbol: sym, shortName: STOCK_NAMES[sym] || sym,
+    regularMarketPrice: q.c, regularMarketChangePercent: chgPct,
+    fiftyTwoWeekHigh: hi52, fiftyTwoWeekLow: lo52,
+    marketCap: null, regularMarketVolume: null,
+    dayHigh: q.h, dayLow: q.l, prevClose: q.pc,
+  };
+}
+
+async function fetchAllStocks() {
+  const token = getKey();
+  const needKey = (elId) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.innerHTML = `<div class="loading" style="flex-direction:column;gap:10px">
+      <div style="font-size:13px;color:var(--text2)">🔑 Enter your free Finnhub API key to load stock data</div>
+      <div style="font-size:11px;color:var(--text3)">Get a free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a></div>
+    </div>`;
+  };
+
+  if (!token) {
+    const banner = document.getElementById('keyBanner');
+    if (banner) banner.style.display = 'flex';
+    needKey('usTable');
+    return;
+  }
+
+  const banner = document.getElementById('keyBanner');
+  if (banner) banner.style.display = 'none';
+
+  const quotes = await Promise.all(US_SYMS.map(s => fetchFinnhubQuote(s, token)));
+  TSP.usData = US_SYMS.map((s,i) => normalizeStock(s, quotes[i])).filter(Boolean);
+
+  if (!TSP.usData.length) {
+    showToast('INFO','⚠ Invalid API key','Check your Finnhub key and try again');
+    const banner = document.getElementById('keyBanner');
+    if (banner) banner.style.display = 'flex';
+    needKey('usTable');
+    return;
+  }
+
+  if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
+  if (typeof updateAlerts === 'function') updateAlerts();
+}
+
+// ── FETCH ASX (Yahoo Finance via proxies) ────────────
+async function fetchYahooChart(sym) {
+  const yUrl  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
+  const yUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl2)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`,
+  ];
+  for (const url of proxies) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      if (!r.ok) continue;
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      if (meta && meta.regularMarketPrice > 0) {
+        const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
+        const chgPct = prev > 0 ? ((meta.regularMarketPrice - prev) / prev * 100) : 0;
+        return {
+          symbol: sym, shortName: STOCK_NAMES[sym] || sym,
+          regularMarketPrice: meta.regularMarketPrice,
+          regularMarketChangePercent: meta.regularMarketChangePercent || chgPct,
+          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh || meta.regularMarketPrice * 1.2,
+          fiftyTwoWeekLow:  meta.fiftyTwoWeekLow  || meta.regularMarketPrice * 0.8,
+          marketCap: null, regularMarketVolume: meta.regularMarketVolume || null,
+        };
+      }
+    } catch {}
+  }
+  return null;
+}
+
+async function fetchASX() {
+  const el = document.getElementById('asxTable');
+  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching ASX data…</div>';
+  const results = [];
+  for (let i=0; i<ASX_SYMS.length; i++) {
+    results.push(fetchYahooChart(ASX_SYMS[i]));
+    if (i % 5 === 4) await new Promise(r => setTimeout(r, 300));
+  }
+  const resolved = await Promise.all(results);
+  TSP.asxData = resolved.filter(Boolean);
+  if (TSP.asxData.length > 0) {
+    if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
+    if (typeof updateAlerts === 'function') updateAlerts();
+  } else {
+    if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
+      <div>⚠ ASX data unavailable — proxies rate limited</div>
+      <div style="font-size:11px;color:var(--text3)">Will retry on next refresh</div>
+    </div>`;
+  }
+}
+
+// ── RENDER STOCKS (shared between pages) ─────────────
+function renderStocks(type, data, elId) {
+  const el = document.getElementById(elId);
+  if (!el || !data.length) return;
+
+  const filter = TSP.filters[type];
+  let rows = data.map(s => {
+    const c24 = s.regularMarketChangePercent || 0;
+    const hi = s.fiftyTwoWeekHigh || s.regularMarketPrice;
+    const lo = s.fiftyTwoWeekLow  || s.regularMarketPrice;
+    const pr = s.regularMarketPrice || 0;
+    const range = hi - lo;
+    const pos = range > 0 ? ((pr - lo) / range) * 100 : 50;
+    const rsi = cl(pos * 0.7 + (c24 > 0 ? 10 : -10) + 15, 5, 95);
+    const sig = getSignal(rsi, c24, null);
+    const audP = type === 'us' ? pr * TSP.audRate : pr;
+    return { ...s, c24, rsi, sig, audP };
+  });
+
+  if (filter === 'buy')  rows = rows.filter(r => r.sig.s === 'BUY');
+  if (filter === 'sell') rows = rows.filter(r => r.sig.s === 'SELL');
+
+  el.innerHTML = `
+  <table class="data-tbl">
+    <thead><tr>
+      <th>Company</th>
+      <th class="r">Price</th>
+      ${type==='us' ? '<th class="r">AUD</th>' : ''}
+      <th class="r">24h</th>
+      <th>52-Week Range</th>
+      <th>Trend RSI</th>
+      <th class="r">Mkt Cap</th>
+      <th>Signal</th>
+    </tr></thead>
+    <tbody>${rows.map(s => {
+      const rsiColor = s.rsi < 35 ? 'var(--green)' : s.rsi > 65 ? 'var(--red)' : 'var(--amber)';
+      const rangePct = s.fiftyTwoWeekHigh > s.fiftyTwoWeekLow
+        ? ((s.regularMarketPrice - s.fiftyTwoWeekLow) / (s.fiftyTwoWeekHigh - s.fiftyTwoWeekLow) * 100).toFixed(0)
+        : 50;
+      const assetData = {
+        name: s.shortName || s.symbol, type: type === 'us' ? 'US Stock' : 'ASX Stock',
+        rsi: s.rsi, c24: s.c24, c7: null, signal: s.sig.s,
+        price: s.regularMarketPrice, high52: s.fiftyTwoWeekHigh, low52: s.fiftyTwoWeekLow,
+        audPrice: s.audP,
+      };
+      return `<tr onclick="openModal(${JSON.stringify(assetData).replace(/"/g,'&quot;')})">
+        <td>
+          <div class="asset-name">${s.shortName || s.symbol}</div>
+          <div class="asset-sub">${s.symbol}</div>
+        </td>
+        <td class="r mono">$${fPrice(s.regularMarketPrice)}</td>
+        ${type==='us' ? `<td class="r mono" style="color:var(--text2)">A$${fPrice(s.audP)}</td>` : ''}
+        <td class="r">${chgBadge(s.c24)}</td>
+        <td>
+          <div style="font-size:10px;color:var(--text3)">${rangePct}% of annual range</div>
+          <div style="font-size:10px;color:var(--text3)">$${fPrice(s.fiftyTwoWeekLow)} – $${fPrice(s.fiftyTwoWeekHigh)}</div>
+        </td>
+        <td>
+          <div class="rsi-wrap">
+            <span class="rsi-val" style="color:${rsiColor}">${f2(s.rsi,1)}</span>
+            <div class="rsi-bar"><div class="rsi-fill" style="width:${cl(s.rsi,0,100)}%;background:${rsiColor}"></div></div>
+          </div>
+        </td>
+        <td class="r mono">${fBig(s.marketCap)}</td>
+        <td>
+          <span class="signal-badge ${s.sig.s}" onclick="event.stopPropagation();openModal(${JSON.stringify(assetData).replace(/"/g,'&quot;')})">
+            ${s.sig.s==='BUY'?'▲':s.sig.s==='SELL'?'▼':'●'} ${s.sig.s}
+          </span>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">${s.sig.why}</div>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+  detectChanges(rows, type);
+}
+
+// ── SIGNAL ANALYSIS MODAL ───────────────────────────
+function openModal(asset) {
+  const existing = document.getElementById('signalModal');
+  if (existing) existing.remove();
+
+  const paragraphs = generateAnalysis(asset);
+  const rangePct = (asset.high52 && asset.low52 && asset.high52 > asset.low52)
+    ? ((asset.price - asset.low52) / (asset.high52 - asset.low52) * 100).toFixed(0)
+    : null;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.id = 'signalModal';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">${asset.name}</div>
+          <div class="modal-sub">${asset.type} · Technical Signal Analysis</div>
+        </div>
+        <button class="modal-close" onclick="document.getElementById('signalModal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="signal-header ${asset.signal}">
+          <div>
+            <div class="sig-type ${asset.signal === 'BUY' ? 'g' : 'r'}">${asset.signal === 'BUY' ? '▲ BUY SIGNAL' : '▼ SELL SIGNAL'}</div>
+            <div class="sig-price">$${fPrice(asset.price)}${asset.audPrice && asset.type !== 'ASX Stock' ? ` <span style="font-size:14px;color:var(--text2)">/ A$${fPrice(asset.audPrice)}</span>` : ''}</div>
+            <div class="sig-meta">${asset.c24 != null ? `24h: ${chgBadge(asset.c24)}` : ''} ${asset.c7 != null ? `&nbsp;7d: ${chgBadge(asset.c7)}` : ''}</div>
+          </div>
+        </div>
+
+        <div class="analysis-grid">
+          <div class="analysis-stat">
+            <div class="as-lbl">RSI (14)</div>
+            <div class="as-val" style="color:${asset.rsi < 35 ? 'var(--green)' : asset.rsi > 65 ? 'var(--red)' : 'var(--amber)'}">${asset.rsi ? f2(asset.rsi,1) : '—'}</div>
+          </div>
+          <div class="analysis-stat">
+            <div class="as-lbl">52W Position</div>
+            <div class="as-val">${rangePct != null ? rangePct+'%' : '—'}</div>
+          </div>
+          <div class="analysis-stat">
+            <div class="as-lbl">Signal Strength</div>
+            <div class="as-val" style="color:${asset.signal==='BUY'?'var(--green)':'var(--red)'}">
+              ${asset.str === 3 ? 'Strong' : asset.str === 2 ? 'Moderate' : 'Weak'}
+            </div>
+          </div>
+        </div>
+
+        <div class="analysis-section">
+          <div class="analysis-label">Analysis</div>
+          <div class="analysis-text">
+            ${paragraphs.slice(0,-1).map(p => `<p>${p}</p>`).join('')}
+          </div>
+        </div>
+
+        <div class="risk-box">${paragraphs[paragraphs.length-1]}</div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+}
+
+// ── NOTIFICATIONS ────────────────────────────────────
+async function toggleNotifications() {
+  const btn = document.getElementById('notifBtn');
+  if (!TSP.notifOn) {
+    const p = await Notification.requestPermission();
+    TSP.notifOn = p === 'granted';
+    if (btn) { btn.textContent = TSP.notifOn ? '🔔 Alerts On' : '⚠ Denied'; btn.classList.toggle('active', TSP.notifOn); }
+    showToast(TSP.notifOn ? 'INFO' : 'INFO', TSP.notifOn ? '✅ Alerts enabled' : '⚠ Permission denied', TSP.notifOn ? 'Push notifications active' : 'Enable in browser settings');
+  } else {
+    TSP.notifOn = false;
+    if (btn) { btn.textContent = '🔔 Alerts'; btn.classList.remove('active'); }
+    showToast('INFO','Alerts disabled','Push notifications turned off');
+  }
+}
+
+function detectChanges(rows, market) {
+  rows.forEach(r => {
+    const key = `${market}-${r.id||r.symbol}`;
+    const nw = r.sig?.s || r.s?.s;
+    const old = TSP.prevSigs[key];
+    if (old && old !== nw && (nw === 'BUY' || nw === 'SELL')) {
+      const name = r.name || r.shortName || r.symbol;
+      const price = r.current_price || r.regularMarketPrice;
+      showToast(nw, `${nw==='BUY'?'▲ BUY':'▼ SELL'}: ${name}`, `Signal changed · $${fPrice(price)} · ${r.sig?.why||r.s?.why}`);
+      if (TSP.notifOn && Notification.permission === 'granted')
+        new Notification(`${nw}: ${name}`, { body: `$${fPrice(price)} · ${r.sig?.why||r.s?.why}` });
+    }
+    if (nw) TSP.prevSigs[key] = nw;
+  });
+}
+
+// ── TOASTS ───────────────────────────────────────────
+function showToast(type, title, msg) {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
+  const container = document.getElementById('toasts');
+  if (container) { container.prepend(el); setTimeout(() => el.remove(), 5500); }
+}
+
+// ── TAB SWITCHING ────────────────────────────────────
+function switchTab(market, filter, el) {
+  TSP.filters[market] = filter;
+  el.closest('.tab-group').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (market === 'crypto' && typeof renderCrypto === 'function') renderCrypto();
+  else if (market === 'us')  renderStocks('us',  TSP.usData,  'usTable');
+  else if (market === 'asx') renderStocks('asx', TSP.asxData, 'asxTable');
+}
+
+// ── AUTH ─────────────────────────────────────────────
+const DB_KEY = 'tsp_users';
+const SES_KEY = 'tsp_session';
+
+async function hashPass(p) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function getUsers()   { return JSON.parse(localStorage.getItem(DB_KEY) || '{}'); }
+function saveUsers(u) { localStorage.setItem(DB_KEY, JSON.stringify(u)); }
+function getSession() { return JSON.parse(sessionStorage.getItem(SES_KEY) || 'null'); }
+function setSession(u){ sessionStorage.setItem(SES_KEY, JSON.stringify(u)); }
+
+function switchAuthTab(tab) {
+  ['login','signup'].forEach(t => {
+    document.getElementById(`form_${t}`).style.display = t===tab ? '' : 'none';
+    document.getElementById(`tab_${t}`).classList.toggle('active', t===tab);
+  });
+  ['authErr','authOk'].forEach(id => { const el=document.getElementById(id); if(el){el.style.display='none';} });
+}
+
+function showAuthMsg(id, msg) {
+  ['authErr','authOk'].forEach(i => { const el=document.getElementById(i); if(el) el.style.display='none'; });
+  const el = document.getElementById(id);
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+
+async function doSignup() {
+  const user = document.getElementById('sUser')?.value.trim().toLowerCase();
+  const pass = document.getElementById('sPass')?.value;
+  const key  = document.getElementById('sKey')?.value.trim();
+  if (!user || user.length < 3) return showAuthMsg('authErr','Username must be at least 3 characters');
+  if (!pass || pass.length < 6) return showAuthMsg('authErr','Password must be at least 6 characters');
+  const users = getUsers();
+  if (users[user]) return showAuthMsg('authErr','Username already taken — sign in instead');
+  users[user] = { hash: await hashPass(pass), finnhubKey: key || '' };
+  saveUsers(users);
+  showAuthMsg('authOk','Account created — signing you in…');
+  setTimeout(() => loginUser(user, key || ''), 700);
+}
+
+async function doLogin() {
+  const user = document.getElementById('lUser')?.value.trim().toLowerCase();
+  const pass = document.getElementById('lPass')?.value;
+  if (!user || !pass) return showAuthMsg('authErr','Enter your username and password');
+  const users = getUsers();
+  if (!users[user]) return showAuthMsg('authErr','Account not found — create one first');
+  if (await hashPass(pass) !== users[user].hash) return showAuthMsg('authErr','Incorrect password');
+  loginUser(user, users[user].finnhubKey || '');
+}
+
+function loginUser(username, finnhubKey) {
+  setSession({ username });
+  const overlay = document.getElementById('loginScreen');
+  if (overlay) overlay.style.display = 'none';
+
+  const initials = username.slice(0,2).toUpperCase();
+  document.querySelectorAll('.user-avatar').forEach(el => el.textContent = initials);
+  document.querySelectorAll('.user-name').forEach(el => el.textContent = username);
+
+  if (finnhubKey) {
+    localStorage.setItem('finnhub_key', finnhubKey);
+    const banner = document.getElementById('keyBanner');
+    if (banner) banner.style.display = 'none';
+  } else {
+    localStorage.removeItem('finnhub_key');
+  }
+
+  if (typeof bootDashboard === 'function') bootDashboard();
+}
+
+function doLogout() {
+  sessionStorage.removeItem(SES_KEY);
+  localStorage.removeItem('finnhub_key');
+  const overlay = document.getElementById('loginScreen');
+  if (overlay) overlay.style.display = 'flex';
+  ['lUser','lPass'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+}
+
+function initAuth() {
+  const session = getSession();
+  if (session) {
+    const users = getUsers();
+    const userData = users[session.username];
+    if (userData) { loginUser(session.username, userData.finnhubKey || ''); return; }
+  }
+  const overlay = document.getElementById('loginScreen');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+// ── SHARED LOGIN HTML ────────────────────────────────
+function renderLoginScreen() {
+  return `
+  <div class="login-screen" id="loginScreen" style="display:none">
+    <div class="login-panel">
+      <div class="login-mark">TradeSignal<span>Pro</span></div>
+      <div class="login-tagline">Professional Market Signal Dashboard · AUS · US · Crypto</div>
+
+      <div class="login-tabs">
+        <div class="login-tab active" id="tab_login" onclick="switchAuthTab('login')">Sign In</div>
+        <div class="login-tab" id="tab_signup" onclick="switchAuthTab('signup')">Create Account</div>
+      </div>
+
+      <div class="auth-msg err" id="authErr"></div>
+      <div class="auth-msg ok" id="authOk"></div>
+
+      <div id="form_login">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="lUser" placeholder="Your username" autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="lPass" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        </div>
+        <button class="login-submit" onclick="doLogin()">Sign In</button>
+      </div>
+
+      <div id="form_signup" style="display:none">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="sUser" placeholder="Choose a username (min 3 chars)">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="sPass" placeholder="Choose a password (min 6 chars)">
+        </div>
+        <div class="field">
+          <label>Finnhub API Key <span style="font-weight:400;text-transform:none">(optional)</span></label>
+          <input type="text" id="sKey" placeholder="Paste your Finnhub key…">
+          <div class="hint">Free key at <a href="https://finnhub.io/register" target="_blank">finnhub.io/register</a> · Saves US stock data</div>
+        </div>
+        <button class="login-submit" onclick="doSignup()">Create Account</button>
+      </div>
+
+      <div class="login-footer">🔒 All data stored locally in your browser · Nothing leaves your device</div>
+    </div>
+  </div>`;
+}
+
+// ── SHARED SIDEBAR HTML ──────────────────────────────
+function renderSidebar(activePage) {
+  const pages = [
+    { href:'index.html', icon:'◈', label:'Overview' },
+    { href:'crypto.html', icon:'₿', label:'Cryptocurrency' },
+    { href:'us.html', icon:'$', label:'US Stocks' },
+    { href:'asx.html', icon:'A', label:'ASX Stocks' },
+  ];
+  return `
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-mark">TradeSignal<span>Pro</span></div>
+      <div class="sidebar-logo-sub">Market Signal Dashboard</div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Markets</div>
+      ${pages.map(p => `
+        <a href="${p.href}" class="nav-item ${activePage===p.href?'active':''}">
+          <span class="nav-icon">${p.icon}</span>
+          ${p.label}
+        </a>`).join('')}
+    </div>
+    <div class="sidebar-bottom">
+      <div class="user-item">
+        <div class="user-avatar">--</div>
+        <div>
+          <div class="user-name">—</div>
+          <div class="user-role">Trader</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="doLogout()">Sign Out</button>
+    </div>
+  </aside>`;
+}
+
+// ── SHARED TOPBAR HTML ───────────────────────────────
+function renderTopbar(title) {
+  return `
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">${title}</div>
+      <div class="market-status"><div class="status-dot"></div> Live Data</div>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-btn" id="notifBtn" onclick="toggleNotifications()">🔔 Alerts</button>
+      <button class="topbar-btn" onclick="refreshPage()" id="refreshBtn">⟳ Refresh</button>
+      <span class="countdown" id="countdown">60s</span>
+    </div>
+  </div>`;
+}

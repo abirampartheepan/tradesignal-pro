@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cryptocurrency — TradeSignal Pro</title>
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div id="loginMount"></div>
+<div id="toasts"></div>
+
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
+
+  <div class="main">
+    <div id="topbarMount"></div>
+
+    <div class="content">
+      <div class="disclaimer">
+        <strong>Disclaimer:</strong> RSI signals are calculated from 7-day CoinGecko sparkline data.
+        Cryptocurrency markets are highly volatile. This is not financial advice.
+      </div>
+
+      <!-- STAT CARDS -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">BTC Price (USD)</div>
+          <div class="stat-value mono" id="btcUsd">—</div>
+          <div class="stat-sub" id="btcAud">Loading…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">BTC Dominance</div>
+          <div class="stat-value b" id="btcDom">—</div>
+          <div class="stat-sub" id="btcChg">Loading…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Crypto Buy Signals</div>
+          <div class="stat-value g" id="cryptoBuys">—</div>
+          <div class="stat-sub" id="cryptoBuyList">Loading…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Crypto Sell Signals</div>
+          <div class="stat-value r" id="cryptoSells">—</div>
+          <div class="stat-sub" id="cryptoSellList">Loading…</div>
+        </div>
+      </div>
+
+      <!-- CRYPTO TABLE -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Cryptocurrency — Top 15 by Market Cap</div>
+            <div class="panel-meta">RSI (14) calculated from 7-day sparkline · Click any row or signal for detailed analysis</div>
+          </div>
+          <div class="tab-group">
+            <div class="tab active" onclick="switchTab('crypto','all',this)">All</div>
+            <div class="tab" onclick="switchTab('crypto','buy',this)">Buy Signals</div>
+            <div class="tab" onclick="switchTab('crypto','sell',this)">Sell Signals</div>
+          </div>
+        </div>
+        <div id="cryptoTable">
+          <div class="loading"><div class="spinner"></div> Fetching cryptocurrency data…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+function renderCrypto() {
+  if (!TSP.cryptoData.length) return;
+  let rows = TSP.cryptoData.map(c => {
+    const sp = c.sparkline_in_7d?.price || [];
+    const rsi = calcRSI(sp);
+    const c24 = c.price_change_percentage_24h;
+    const c7  = c.price_change_percentage_7d_in_currency;
+    const s = getSignal(rsi, c24, c7);
+    return { ...c, rsi, s, c24, c7 };
+  });
+  if (TSP.filters.crypto === 'buy')  rows = rows.filter(r => r.s.s === 'BUY');
+  if (TSP.filters.crypto === 'sell') rows = rows.filter(r => r.s.s === 'SELL');
+
+  // Update stats
+  const allRows = TSP.cryptoData.map(c => {
+    const rsi = calcRSI(c.sparkline_in_7d?.price||[]);
+    return getSignal(rsi, c.price_change_percentage_24h, c.price_change_percentage_7d_in_currency);
+  });
+  const buys = allRows.filter(s => s.s==='BUY'), sells = allRows.filter(s => s.s==='SELL');
+  const btc = TSP.cryptoData.find(c => c.id==='bitcoin');
+  if (btc) {
+    document.getElementById('btcUsd').textContent = '$'+fPrice(btc.current_price);
+    document.getElementById('btcAud').innerHTML = `<span class="${gc(btc.price_change_percentage_24h)}">${gs(btc.price_change_percentage_24h)}${f2(btc.price_change_percentage_24h)}%</span> · A$${fPrice(btc.current_price*TSP.audRate)}`;
+    const tot = TSP.cryptoData.reduce((s,c) => s+(c.market_cap||0),0);
+    document.getElementById('btcDom').textContent = ((btc.market_cap/tot)*100).toFixed(1)+'%';
+    document.getElementById('btcChg').textContent = 'Total Crypto Cap: '+fBig(tot);
+  }
+  document.getElementById('cryptoBuys').textContent = buys.length;
+  document.getElementById('cryptoSells').textContent = sells.length;
+  document.getElementById('cryptoBuyList').textContent = TSP.cryptoData.filter((_,i)=>allRows[i]?.s==='BUY').slice(0,4).map(c=>c.symbol.toUpperCase()).join(', ')||'None';
+  document.getElementById('cryptoSellList').textContent = TSP.cryptoData.filter((_,i)=>allRows[i]?.s==='SELL').slice(0,4).map(c=>c.symbol.toUpperCase()).join(', ')||'None';
+
+  document.getElementById('cryptoTable').innerHTML = `
+  <table class="data-tbl">
+    <thead><tr>
+      <th>#</th>
+      <th>Asset</th>
+      <th class="r">Price (USD)</th>
+      <th class="r">Price (AUD)</th>
+      <th class="r">24h</th>
+      <th class="r">7d</th>
+      <th>RSI (14)</th>
+      <th class="r">Market Cap</th>
+      <th class="r">Volume 24h</th>
+      <th>Signal</th>
+    </tr></thead>
+    <tbody>${rows.map(c => {
+      const rsiColor = c.rsi < 30 ? 'var(--green)' : c.rsi > 70 ? 'var(--red)' : 'var(--amber)';
+      const assetData = {
+        name: c.name, type:'Crypto', rsi: c.rsi, c24: c.c24, c7: c.c7,
+        signal: c.s.s, str: c.s.str, price: c.current_price,
+        audPrice: c.current_price * TSP.audRate, high52: null, low52: null,
+      };
+      return `<tr onclick="openModal(${JSON.stringify(assetData).replace(/"/g,'&quot;')})">
+        <td style="color:var(--text3)">${c.market_cap_rank}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <img src="${c.image}" width="24" height="24" style="border-radius:50%" onerror="this.style.display='none'">
+            <div>
+              <div class="asset-name">${c.name}</div>
+              <div class="asset-sub">${c.symbol.toUpperCase()}</div>
+            </div>
+          </div>
+        </td>
+        <td class="r mono">$${fPrice(c.current_price)}</td>
+        <td class="r mono" style="color:var(--text2)">A$${fPrice(c.current_price*TSP.audRate)}</td>
+        <td class="r">${chgBadge(c.c24)}</td>
+        <td class="r">${chgBadge(c.c7)}</td>
+        <td>
+          <div class="rsi-wrap">
+            <span class="rsi-val" style="color:${rsiColor}">${c.rsi ? f2(c.rsi,1) : '—'}</span>
+            <div class="rsi-bar"><div class="rsi-fill" style="width:${c.rsi?cl(c.rsi,0,100):50}%;background:${rsiColor}"></div></div>
+          </div>
+        </td>
+        <td class="r mono">${fBig(c.market_cap)}</td>
+        <td class="r mono">${fBig(c.total_volume)}</td>
+        <td>
+          <span class="signal-badge ${c.s.s}" onclick="event.stopPropagation();openModal(${JSON.stringify(assetData).replace(/"/g,'&quot;')})">
+            ${c.s.s==='BUY'?'▲':c.s.s==='SELL'?'▼':'●'} ${c.s.s}
+          </span>
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">${c.s.why}</div>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+
+  detectChanges(rows, 'crypto');
+}
+
+let countdownTimer;
+function startCountdown() {
+  clearInterval(countdownTimer);
+  TSP.countdown = REFRESH_SEC;
+  countdownTimer = setInterval(() => {
+    TSP.countdown--;
+    const el = document.getElementById('countdown');
+    if (el) el.textContent = TSP.countdown+'s';
+    if (TSP.countdown <= 0) { refreshPage(); }
+  }, 1000);
+}
+
+async function refreshPage() {
+  const btn = document.getElementById('refreshBtn');
+  if (btn) btn.textContent = '⟳ Loading…';
+  TSP.countdown = REFRESH_SEC;
+  await Promise.all([fetchAUD(), fetchCrypto()]);
+  if (btn) btn.textContent = '⟳ Refresh';
+  startCountdown();
+}
+
+async function bootDashboard() {
+  document.getElementById('appShell').style.display = 'flex';
+  await Promise.all([fetchAUD(), fetchCrypto()]);
+  startCountdown();
+}
+
+document.getElementById('loginMount').innerHTML = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('crypto.html');
+document.getElementById('topbarMount').innerHTML = renderTopbar('Cryptocurrency Markets');
+initAuth();
+</script>
+</body>
+</html>

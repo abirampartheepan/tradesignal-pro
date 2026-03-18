@@ -1,1208 +1,293 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TradeSignal Pro | Live Trading Dashboard</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overview — TradeSignal Pro</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <style>
-    :root {
-      --bg: #080c18;
-      --bg2: #0c1220;
-      --bg3: #111827;
-      --bg4: #1a2235;
-      --border: #1f2d45;
-      --border2: #263550;
-      --txt: #e2e8f0;
-      --txt2: #8892a4;
-      --txt3: #4a5568;
-      --green: #00d084;
-      --green-bg: rgba(0,208,132,0.08);
-      --green-border: rgba(0,208,132,0.3);
-      --red: #ff4757;
-      --red-bg: rgba(255,71,87,0.08);
-      --red-border: rgba(255,71,87,0.3);
-      --yellow: #ffd32a;
-      --yellow-bg: rgba(255,211,42,0.08);
-      --yellow-border: rgba(255,211,42,0.3);
-      --blue: #4a9eff;
-      --blue-bg: rgba(74,158,255,0.08);
-      --purple: #a855f7;
-      --accent: #4a9eff;
-    }
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--txt); min-height:100vh; }
-
-    /* HEADER */
-    .header {
-      background:var(--bg2); border-bottom:1px solid var(--border);
-      padding:0 28px; height:64px;
-      display:flex; align-items:center; justify-content:space-between;
-      position:sticky; top:0; z-index:200;
-    }
-    .logo { display:flex; align-items:center; gap:10px; font-size:20px; font-weight:800; color:var(--accent); }
-    .logo-sub { color:var(--txt2); font-weight:400; font-size:13px; margin-left:6px; }
-    .header-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-    .live-pill {
-      display:flex; align-items:center; gap:6px;
-      background:var(--green-bg); border:1px solid var(--green-border);
-      color:var(--green); padding:5px 12px; border-radius:20px; font-size:12px; font-weight:600;
-    }
-    .live-dot { width:7px; height:7px; background:var(--green); border-radius:50%; animation:pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
-    .hbtn {
-      background:var(--bg3); border:1px solid var(--border); color:var(--txt2);
-      padding:7px 14px; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600;
-      transition:.2s; white-space:nowrap;
-    }
-    .hbtn:hover,.hbtn.on { border-color:var(--accent); color:var(--accent); background:var(--blue-bg); }
-    .timer-badge { font-size:12px; color:var(--txt3); }
-
-    /* LAYOUT */
-    .wrap { max-width:1440px; margin:0 auto; padding:24px 28px; }
-
-    /* DISCLAIMER */
-    .disclaimer {
-      background:var(--yellow-bg); border:1px solid var(--yellow-border);
-      border-radius:10px; padding:12px 18px; margin-bottom:22px;
-      font-size:12px; color:var(--yellow); display:flex; align-items:center; gap:10px;
-    }
-
-    /* STAT CARDS */
-    .stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
-    .stat-card {
-      background:var(--bg3); border:1px solid var(--border); border-radius:12px;
-      padding:20px 22px; transition:.2s;
-    }
-    .stat-card:hover { border-color:var(--border2); }
-    .stat-lbl { font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px; }
-    .stat-val { font-size:26px; font-weight:700; }
-    .stat-sub { font-size:12px; margin-top:5px; }
-    .g { color:var(--green); } .r { color:var(--red); } .y { color:var(--yellow); } .b { color:var(--blue); }
-
-    /* CARD */
-    .card { background:var(--bg3); border:1px solid var(--border); border-radius:12px; margin-bottom:24px; overflow:hidden; }
-    .card-head {
-      display:flex; align-items:center; justify-content:space-between;
-      padding:18px 24px; border-bottom:1px solid var(--border);
-    }
-    .card-title { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:700; }
-    .card-desc { font-size:11px; color:var(--txt3); margin-top:2px; }
-
-    /* TABLE */
-    .tbl { width:100%; border-collapse:collapse; }
-    .tbl th {
-      padding:11px 20px; text-align:left; font-size:11px; font-weight:600;
-      color:var(--txt3); text-transform:uppercase; letter-spacing:.5px;
-      background:var(--bg2); border-bottom:1px solid var(--border);
-    }
-    .tbl td { padding:13px 20px; font-size:13px; border-bottom:1px solid rgba(31,45,69,.5); vertical-align:middle; }
-    .tbl tr:last-child td { border-bottom:none; }
-    .tbl tr:hover td { background:var(--bg4); }
-    .asset-name { font-weight:600; font-size:14px; }
-    .asset-sub { font-size:11px; color:var(--txt3); margin-top:2px; }
-    .mono { font-family:'Courier New',monospace; font-weight:600; }
-
-    /* BADGES */
-    .badge {
-      display:inline-flex; align-items:center; gap:3px;
-      padding:3px 9px; border-radius:6px; font-size:12px; font-weight:600;
-    }
-    .badge.g { background:var(--green-bg); color:var(--green); }
-    .badge.r { background:var(--red-bg); color:var(--red); }
-
-    .sig {
-      display:inline-flex; align-items:center; gap:4px;
-      padding:5px 13px; border-radius:8px; font-size:12px; font-weight:700; letter-spacing:.4px;
-    }
-    .sig.BUY  { background:var(--green-bg); color:var(--green); border:1px solid var(--green-border); }
-    .sig.SELL { background:var(--red-bg);   color:var(--red);   border:1px solid var(--red-border);   }
-    .sig.HOLD { background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow-border); }
-
-    /* RSI BAR */
-    .rsi-wrap { display:flex; flex-direction:column; gap:3px; }
-    .rsi-num { font-size:12px; font-weight:600; }
-    .rsi-track { width:80px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
-    .rsi-fill { height:100%; border-radius:3px; transition:width .4s; }
-
-    /* PORTFOLIO */
-    .port-grid { display:grid; grid-template-columns:1fr 400px; }
-    .port-left { padding:24px; border-right:1px solid var(--border); }
-    .port-right { padding:24px; display:flex; flex-direction:column; align-items:center; }
-    .port-row {
-      display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr auto;
-      gap:10px; align-items:end; margin-bottom:12px;
-    }
-    .fg label { display:block; font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.4px; margin-bottom:5px; }
-    .fg input, .fg select {
-      width:100%; background:var(--bg2); border:1px solid var(--border); color:var(--txt);
-      padding:9px 12px; border-radius:8px; font-size:13px; outline:none; transition:.2s;
-    }
-    .fg input:focus,.fg select:focus { border-color:var(--accent); }
-    .fg select option { background:var(--bg3); }
-    .btn { padding:9px 14px; border-radius:8px; border:none; cursor:pointer; font-size:13px; font-weight:600; transition:.2s; }
-    .btn-del { background:var(--red-bg); color:var(--red); border:1px solid var(--red-border); }
-    .btn-del:hover { background:var(--red); color:#fff; }
-    .btn-calc { width:100%; padding:13px; background:var(--accent); color:#fff; border-radius:10px; font-size:14px; font-weight:700; border:none; cursor:pointer; margin-top:14px; transition:.2s; }
-    .btn-calc:hover { background:#3a8eef; }
-    .port-totals {
-      display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
-      background:var(--bg2); border:1px solid var(--border); border-radius:10px;
-      padding:16px; margin-top:16px;
-    }
-    .pt-item { text-align:center; }
-    .pt-lbl { font-size:11px; color:var(--txt3); text-transform:uppercase; }
-    .pt-val { font-size:18px; font-weight:700; margin-top:4px; }
-    .chart-title { font-size:13px; font-weight:600; color:var(--txt2); margin-bottom:14px; text-align:center; }
-    .chart-wrap { position:relative; width:280px; height:280px; }
-    .port-legend { margin-top:16px; width:100%; }
-    .leg-item { display:flex; align-items:center; gap:8px; font-size:12px; padding:4px 0; border-bottom:1px solid rgba(31,45,69,.3); }
-    .leg-item:last-child { border-bottom:none; }
-    .leg-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-
-    /* LOADING */
-    .loading { display:flex; align-items:center; justify-content:center; gap:10px; padding:40px; color:var(--txt3); }
-    .spin { width:20px; height:20px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
-    @keyframes spin { to{transform:rotate(360deg)} }
-
-    /* TOASTS */
-    #toasts { position:fixed; bottom:24px; right:24px; z-index:999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
-    .toast {
-      background:var(--bg3); border:1px solid var(--border); border-radius:10px;
-      padding:14px 18px; min-width:300px; max-width:360px;
-      display:flex; gap:12px; align-items:flex-start;
-      animation:toastIn .3s ease; box-shadow:0 8px 32px rgba(0,0,0,.4);
-    }
-    .toast.BUY  { border-left:3px solid var(--green); }
-    .toast.SELL { border-left:3px solid var(--red); }
-    .toast.INFO { border-left:3px solid var(--blue); }
-    .toast-ico { font-size:20px; flex-shrink:0; margin-top:1px; }
-    .toast-title { font-weight:700; font-size:13px; }
-    .toast-msg { font-size:12px; color:var(--txt2); margin-top:3px; }
-    @keyframes toastIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
-
-    /* ALERTS GRID */
-    .alerts-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:20px; }
-    .alert-item {
-      background:var(--bg2); border-radius:10px; padding:14px 16px;
-      border:1px solid var(--border); display:flex; flex-direction:column; gap:6px;
-      transition:.2s;
-    }
-    .alert-item:hover { border-color:var(--border2); }
-    .alert-top { display:flex; justify-content:space-between; align-items:flex-start; }
-    .alert-name { font-weight:700; font-size:14px; }
-    .alert-type { font-size:11px; color:var(--txt3); margin-top:2px; }
-    .alert-price { font-size:18px; font-weight:700; font-family:'Courier New',monospace; }
-
-    /* TABS */
-    .tabs { display:flex; gap:4px; }
-    .tab { padding:6px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid transparent; color:var(--txt3); transition:.15s; }
-    .tab.on { background:var(--blue-bg); border-color:rgba(74,158,255,.4); color:var(--accent); }
-    .tab:hover:not(.on) { color:var(--txt2); border-color:var(--border); }
-
-    /* LOGIN OVERLAY */
-    .login-overlay {
-      position:fixed; inset:0; z-index:9999;
-      background:var(--bg);
-      display:flex; align-items:center; justify-content:center;
-    }
-    .login-box {
-      background:var(--bg3); border:1px solid var(--border);
-      border-radius:20px; padding:48px 44px; width:100%; max-width:420px;
-      box-shadow:0 32px 80px rgba(0,0,0,.6);
-    }
-    .login-logo {
-      font-size:28px; font-weight:900; color:var(--accent);
-      text-align:center; margin-bottom:6px;
-    }
-    .login-logo span { color:var(--green); }
-    .login-sub { text-align:center; color:var(--txt3); font-size:13px; margin-bottom:32px; }
-    .login-tabs { display:flex; gap:0; margin-bottom:28px; background:var(--bg2); border-radius:10px; padding:4px; }
-    .login-tab {
-      flex:1; text-align:center; padding:9px; border-radius:8px;
-      font-size:13px; font-weight:600; cursor:pointer; color:var(--txt3); transition:.2s;
-    }
-    .login-tab.on { background:var(--accent); color:#fff; }
-    .login-field { margin-bottom:16px; }
-    .login-field label { display:block; font-size:11px; color:var(--txt3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
-    .login-field input {
-      width:100%; background:var(--bg2); border:1px solid var(--border); color:var(--txt);
-      padding:12px 14px; border-radius:10px; font-size:14px; outline:none; transition:.2s;
-    }
-    .login-field input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(74,158,255,.15); }
-    .login-field .field-hint { font-size:11px; color:var(--txt3); margin-top:5px; }
-    .login-btn {
-      width:100%; padding:13px; background:var(--accent); color:#fff;
-      border:none; border-radius:10px; font-size:15px; font-weight:700;
-      cursor:pointer; margin-top:8px; transition:.2s;
-    }
-    .login-btn:hover { background:#3a8eef; }
-    .login-err {
-      background:var(--red-bg); border:1px solid var(--red-border); color:var(--red);
-      padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; display:none;
-    }
-    .login-ok {
-      background:var(--green-bg); border:1px solid var(--green-border); color:var(--green);
-      padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:16px; display:none;
-    }
-    .login-footer { text-align:center; font-size:11px; color:var(--txt3); margin-top:20px; }
-    .user-pill {
-      display:flex; align-items:center; gap:8px;
-      background:var(--bg4); border:1px solid var(--border);
-      padding:6px 12px; border-radius:8px; font-size:12px; font-weight:600;
-    }
-    .user-avatar {
-      width:24px; height:24px; border-radius:50%; background:var(--accent);
-      display:flex; align-items:center; justify-content:center;
-      font-size:11px; font-weight:800; color:#fff;
-    }
-
-    /* RESPONSIVE */
-    @media(max-width:1100px){
-      .stats-row{grid-template-columns:repeat(2,1fr);}
-      .port-grid{grid-template-columns:1fr;}
-      .port-left{border-right:none;border-bottom:1px solid var(--border);}
-      .alerts-grid{grid-template-columns:repeat(2,1fr);}
-    }
-    @media(max-width:720px){
-      .wrap{padding:16px;}
-      .stats-row{grid-template-columns:repeat(2,1fr);gap:10px;}
-      .tbl th:nth-child(n+5),.tbl td:nth-child(n+5){display:none;}
-      .port-row{grid-template-columns:1fr 1fr;}
-      .alerts-grid{grid-template-columns:1fr;}
-      .header{padding:0 16px;}
-      .logo-sub{display:none;}
-    }
-  </style>
+  <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 
-<!-- LOGIN OVERLAY -->
-<div class="login-overlay" id="loginOverlay">
-  <div class="login-box">
-    <div class="login-logo">📈 TradeSignal<span>Pro</span></div>
-    <div class="login-sub">Your personal live trading dashboard</div>
-
-    <div class="login-tabs">
-      <div class="login-tab on" id="tabLogin" onclick="switchAuthTab('login')">Sign In</div>
-      <div class="login-tab" id="tabSignup" onclick="switchAuthTab('signup')">Create Account</div>
-    </div>
-
-    <div id="authErr" class="login-err"></div>
-    <div id="authOk" class="login-ok"></div>
-
-    <!-- SIGN IN FORM -->
-    <div id="formLogin">
-      <div class="login-field">
-        <label>Username</label>
-        <input type="text" id="loginUser" placeholder="Enter your username" autocomplete="username">
-      </div>
-      <div class="login-field">
-        <label>Password</label>
-        <input type="password" id="loginPass" placeholder="Enter your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-      </div>
-      <button class="login-btn" onclick="doLogin()">Sign In →</button>
-    </div>
-
-    <!-- SIGN UP FORM -->
-    <div id="formSignup" style="display:none">
-      <div class="login-field">
-        <label>Username</label>
-        <input type="text" id="signupUser" placeholder="Choose a username" autocomplete="username">
-      </div>
-      <div class="login-field">
-        <label>Password</label>
-        <input type="password" id="signupPass" placeholder="Choose a password (min 6 chars)" autocomplete="new-password">
-      </div>
-      <div class="login-field">
-        <label>Finnhub API Key <span style="color:var(--txt3);font-weight:400">(optional — can add later)</span></label>
-        <input type="text" id="signupKey" placeholder="Paste your free Finnhub key…">
-        <div class="field-hint">Get a free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a> · Takes 30 seconds</div>
-      </div>
-      <button class="login-btn" onclick="doSignup()">Create Account →</button>
-    </div>
-
-    <div class="login-footer">
-      🔒 All data saved locally in your browser · Nothing sent to any server
-    </div>
-  </div>
-</div>
-
-<!-- HEADER -->
-<header class="header">
-  <div class="logo">
-    📈 TradeSignal<span style="color:var(--green)">Pro</span>
-    <span class="logo-sub">AUS · US · Crypto</span>
-  </div>
-  <div class="header-right">
-    <div class="live-pill"><div class="live-dot"></div> LIVE</div>
-    <button class="hbtn" id="notifBtn" onclick="toggleNotifications()">🔔 Enable Alerts</button>
-    <button class="hbtn" onclick="refreshAll()" id="refreshBtn">⟳ Refresh</button>
-    <span class="timer-badge" id="timerBadge">Next: 60s</span>
-    <div class="user-pill" id="userPill" style="display:none">
-      <div class="user-avatar" id="userAvatar">?</div>
-      <span id="userLabel">User</span>
-      <button onclick="doLogout()" style="background:var(--red-bg);border:1px solid var(--red-border);color:var(--red);padding:3px 8px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:none;margin-left:4px" title="Sign out">Sign out</button>
-    </div>
-  </div>
-</header>
-
-<!-- TOASTS -->
+<div id="loginMount"></div>
 <div id="toasts"></div>
 
-<!-- MAIN -->
-<div class="wrap">
+<div class="app" id="appShell" style="display:none">
+  <div id="sidebarMount"></div>
 
-  <!-- DISCLAIMER -->
-  <div class="disclaimer">
-    ⚠️ <strong>Disclaimer:</strong> For informational purposes only. Signals are based on technical indicators — not financial advice. Always do your own research. Past performance does not guarantee future results.
-  </div>
+  <div class="main">
+    <div id="topbarMount"></div>
 
-  <!-- STAT CARDS -->
-  <div class="stats-row">
-    <div class="stat-card">
-      <div class="stat-lbl">🟢 Buy Signals</div>
-      <div class="stat-val g" id="buyCount">—</div>
-      <div class="stat-sub" id="buyList" style="color:var(--txt3);font-size:11px">Loading…</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-lbl">🔴 Sell Signals</div>
-      <div class="stat-val r" id="sellCount">—</div>
-      <div class="stat-sub" id="sellList" style="color:var(--txt3);font-size:11px">Loading…</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-lbl">₿ BTC Dominance</div>
-      <div class="stat-val b" id="btcDom">—</div>
-      <div class="stat-sub" id="btcPrice" style="color:var(--txt3)">Loading…</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-lbl">🌐 Crypto Market Cap</div>
-      <div class="stat-val" id="totalMcap">—</div>
-      <div class="stat-sub" id="mcapChange" style="color:var(--txt3)">Loading…</div>
-    </div>
-  </div>
+    <div class="content">
+      <div class="disclaimer">
+        <strong>Disclaimer:</strong> Signals are generated from technical indicators (RSI, price momentum). This is not financial advice.
+        Past performance does not predict future results. Always conduct independent research before investing.
+      </div>
 
-  <!-- TOP ALERTS -->
-  <div class="card">
-    <div class="card-head">
-      <div>
-        <div class="card-title">🚨 Top Signal Alerts</div>
-        <div class="card-desc">Strongest buy &amp; sell signals right now across all markets</div>
-      </div>
-    </div>
-    <div id="alertsGrid" class="alerts-grid">
-      <div class="loading" style="grid-column:1/-1"><div class="spin"></div> Loading signals…</div>
-    </div>
-  </div>
-
-  <!-- CRYPTO -->
-  <div class="card">
-    <div class="card-head">
-      <div>
-        <div class="card-title">₿ Cryptocurrency — Top 15</div>
-        <div class="card-desc">Live prices · RSI (14) from 7-day sparkline · Momentum signals</div>
-      </div>
-      <div class="tabs">
-        <div class="tab on" onclick="switchTab('crypto','all',this)">All</div>
-        <div class="tab" onclick="switchTab('crypto','buy',this)">🟢 Buy</div>
-        <div class="tab" onclick="switchTab('crypto','sell',this)">🔴 Sell</div>
-      </div>
-    </div>
-    <div id="cryptoTable"><div class="loading"><div class="spin"></div> Fetching crypto…</div></div>
-  </div>
-
-  <!-- FINNHUB API KEY BANNER -->
-  <div id="keyBanner" class="card" style="margin-bottom:24px">
-    <div style="padding:20px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px">
-        <div style="font-weight:700;font-size:15px;margin-bottom:4px">🔑 Free Stock API Key Required</div>
-        <div style="font-size:12px;color:var(--txt3)">US &amp; ASX stocks use Finnhub — free, takes 30 seconds to set up. No credit card needed.</div>
-      </div>
-      <a href="https://finnhub.io/register" target="_blank" style="background:var(--blue-bg);border:1px solid var(--accent);color:var(--accent);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap">1. Get Free Key →</a>
-      <div style="display:flex;gap:8px;flex:1;min-width:220px">
-        <input id="keyInput" type="text" placeholder="Paste your Finnhub API key here…" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--txt);padding:9px 12px;border-radius:8px;font-size:13px;outline:none">
-        <button onclick="saveKey()" style="background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">2. Save &amp; Load</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- US STOCKS -->
-  <div class="card">
-    <div class="card-head">
-      <div>
-        <div class="card-title">🇺🇸 US Stocks — NYSE / NASDAQ</div>
-        <div class="card-desc">Top 15 US stocks · Live signals · USD + AUD pricing</div>
-      </div>
-      <div class="tabs">
-        <div class="tab on" onclick="switchTab('us','all',this)">All</div>
-        <div class="tab" onclick="switchTab('us','buy',this)">🟢 Buy</div>
-        <div class="tab" onclick="switchTab('us','sell',this)">🔴 Sell</div>
-      </div>
-    </div>
-    <div id="usTable"><div class="loading"><div class="spin"></div> Fetching US stocks…</div></div>
-  </div>
-
-  <!-- ASX STOCKS -->
-  <div class="card">
-    <div class="card-head">
-      <div>
-        <div class="card-title">🇦🇺 ASX Stocks — Australia</div>
-        <div class="card-desc">Top 15 ASX stocks · 52-week trend signals · AUD pricing</div>
-      </div>
-      <div class="tabs">
-        <div class="tab on" onclick="switchTab('asx','all',this)">All</div>
-        <div class="tab" onclick="switchTab('asx','buy',this)">🟢 Buy</div>
-        <div class="tab" onclick="switchTab('asx','sell',this)">🔴 Sell</div>
-      </div>
-    </div>
-    <div id="asxTable"><div class="loading"><div class="spin"></div> Fetching ASX stocks…</div></div>
-  </div>
-
-  <!-- PORTFOLIO CALCULATOR -->
-  <div class="card">
-    <div class="card-head">
-      <div>
-        <div class="card-title">💼 Portfolio Calculator</div>
-        <div class="card-desc">Add your holdings to see total value, P&amp;L and allocation chart</div>
-      </div>
-      <button class="hbtn" onclick="addPortRow()">+ Add Asset</button>
-    </div>
-    <div class="port-grid">
-      <div class="port-left">
-        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:10px;margin-bottom:8px;padding:0 2px">
-          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px">Asset</div>
-          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px">Qty / Units</div>
-          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px">Buy Price (AUD)</div>
-          <div style="font-size:11px;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px">Current (Auto)</div>
-          <div></div>
+      <!-- STAT CARDS -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Buy Signals</div>
+          <div class="stat-value g" id="buyCount">—</div>
+          <div class="stat-sub" id="buyList">Loading…</div>
         </div>
-        <div id="portRows"></div>
-        <button class="btn-calc" onclick="calcPortfolio()">📊 Calculate Portfolio Value</button>
-        <div class="port-totals" id="portTotals" style="display:none">
-          <div class="pt-item">
-            <div class="pt-lbl">Total Value</div>
-            <div class="pt-val b" id="ptTotal">—</div>
+        <div class="stat-card">
+          <div class="stat-label">Sell Signals</div>
+          <div class="stat-value r" id="sellCount">—</div>
+          <div class="stat-sub" id="sellList">Loading…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">BTC Dominance</div>
+          <div class="stat-value b" id="btcDom">—</div>
+          <div class="stat-sub" id="btcPrice">Loading…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Crypto Mkt Cap</div>
+          <div class="stat-value" id="totalMcap">—</div>
+          <div class="stat-sub" id="mcapChg">Loading…</div>
+        </div>
+      </div>
+
+      <!-- TOP SIGNAL ALERTS -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Top Signal Alerts</div>
+            <div class="panel-meta">Strongest buy &amp; sell signals across all markets · Click any card for detailed analysis</div>
           </div>
-          <div class="pt-item">
-            <div class="pt-lbl">Profit / Loss</div>
-            <div class="pt-val" id="ptChange">—</div>
+        </div>
+        <div id="alertsGrid" class="alerts-grid">
+          <div class="loading" style="grid-column:1/-1"><div class="spinner"></div> Loading signals…</div>
+        </div>
+      </div>
+
+      <!-- PORTFOLIO CALCULATOR -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Portfolio Calculator</div>
+            <div class="panel-meta">Enter your holdings to calculate current value and allocation</div>
           </div>
-          <div class="pt-item">
-            <div class="pt-lbl">Best Performer</div>
-            <div class="pt-val g" id="ptBest">—</div>
+          <button class="btn-add" onclick="addPortRow()">+ Add Position</button>
+        </div>
+        <div class="port-grid">
+          <div class="port-left">
+            <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 32px;gap:8px;margin-bottom:8px;padding:0 2px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Asset</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Quantity</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Buy Price (AUD)</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Current (Auto)</div>
+              <div></div>
+            </div>
+            <div id="portRows"></div>
+            <button class="btn-calc" onclick="calcPortfolio()">Calculate Portfolio Value</button>
+            <div class="port-totals" id="portTotals" style="display:none">
+              <div class="pt-item"><div class="pt-lbl">Total Value (AUD)</div><div class="pt-val b" id="ptTotal">—</div></div>
+              <div class="pt-item"><div class="pt-lbl">Profit / Loss</div><div class="pt-val" id="ptChange">—</div></div>
+              <div class="pt-item"><div class="pt-lbl">Best Performer</div><div class="pt-val g" id="ptBest">—</div></div>
+            </div>
+          </div>
+          <div class="port-right">
+            <div class="chart-label">Allocation by Value</div>
+            <canvas id="pieChart" width="280" height="280"></canvas>
+            <div class="port-legend" id="portLegend">
+              <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:16px">Add assets above and calculate to view chart</div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="port-right">
-        <div class="chart-title">Portfolio Allocation</div>
-        <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
-        <div class="port-legend" id="portLegend">
-          <div style="text-align:center;color:var(--txt3);font-size:12px;margin-top:20px">Add assets and calculate to see chart</div>
-        </div>
+
+      <div style="font-size:10px;color:var(--text3);text-align:center;padding:16px 0">
+        TradeSignal Pro · Data: CoinGecko + Finnhub + Yahoo Finance · Refreshes every 60s · Not financial advice
       </div>
     </div>
-  </div>
-
-  <!-- FOOTER -->
-  <div style="text-align:center;padding:20px 0 10px;font-size:11px;color:var(--txt3)">
-    TradeSignal Pro · Data: CoinGecko + Yahoo Finance · Auto-refreshes every 60s · Not financial advice
   </div>
 </div>
 
+<script src="assets/app.js"></script>
 <script>
-// ── CONFIG ──────────────────────────────────────────────
-const REFRESH_SEC = 60;
-const AUD_FALLBACK = 1.57;
-// Hard-coded stock names (no extra API calls needed)
-const STOCK_NAMES = {
-  NVDA:'NVIDIA','AAPL':'Apple','MSFT':'Microsoft','AMZN':'Amazon','META':'Meta',
-  GOOGL:'Alphabet','TSLA':'Tesla','AMD':'AMD','JPM':'JPMorgan','V':'Visa',
-  NFLX:'Netflix','DIS':'Disney','COIN':'Coinbase','PLTR':'Palantir','SOFI':'SoFi',
-  'BHP.AX':'BHP Group','CBA.AX':'CommBank','CSL.AX':'CSL','ANZ.AX':'ANZ Bank',
-  'WBC.AX':'Westpac','NAB.AX':'NAB','WES.AX':'Wesfarmers','MQG.AX':'Macquarie',
-  'RIO.AX':'Rio Tinto','TLS.AX':'Telstra','FMG.AX':'Fortescue','WOW.AX':'Woolworths',
-  'GMG.AX':'Goodman Group','REA.AX':'REA Group','XRO.AX':'Xero',
-  'ASX:BHP':'BHP Group','ASX:CBA':'CommBank','ASX:CSL':'CSL','ASX:ANZ':'ANZ Bank',
-  'ASX:WBC':'Westpac','ASX:NAB':'NAB','ASX:WES':'Wesfarmers','ASX:MQG':'Macquarie',
-  'ASX:RIO':'Rio Tinto','ASX:TLS':'Telstra','ASX:FMG':'Fortescue','ASX:WOW':'Woolworths',
-  'ASX:GMG':'Goodman Group','ASX:REA':'REA Group','ASX:XRO':'Xero'
-};
-
-const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
-// ASX symbols — Yahoo Finance format (Finnhub free tier doesn't support ASX)
-const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
-
-const COLORS = ['#4a9eff','#00d084','#ff4757','#ffd32a','#a855f7','#f97316','#06b6d4','#ec4899','#84cc16','#f43f5e','#8b5cf6','#14b8a6','#fb923c','#a3e635','#e879f9'];
 const PORT_ASSETS = [
-  {sym:'BTC',id:'bitcoin',type:'crypto'},{sym:'ETH',id:'ethereum',type:'crypto'},
-  {sym:'SOL',id:'solana',type:'crypto'},{sym:'XRP',id:'ripple',type:'crypto'},
-  {sym:'BNB',id:'binancecoin',type:'crypto'},{sym:'AAPL',type:'us'},{sym:'NVDA',type:'us'},
-  {sym:'TSLA',type:'us'},{sym:'MSFT',type:'us'},{sym:'AMZN',type:'us'},
-  {sym:'BHP.AX',type:'asx'},{sym:'CBA.AX',type:'asx'},{sym:'CSL.AX',type:'asx'},
-  {sym:'Custom',type:'custom'}
+  {sym:'BTC',id:'bitcoin'},{sym:'ETH',id:'ethereum'},{sym:'SOL',id:'solana'},
+  {sym:'XRP',id:'ripple'},{sym:'AAPL'},{sym:'NVDA'},{sym:'TSLA'},
+  {sym:'BHP.AX'},{sym:'CBA.AX'},{sym:'Custom'},
 ];
 
-// ── STATE ──────────────────────────────────────────────
-let cryptoData=[], usData=[], asxData=[];
-let audRate=AUD_FALLBACK, notifOn=false, countdown=REFRESH_SEC;
-let pieChart=null, portRowId=0;
-let filters={crypto:'all',us:'all',asx:'all'};
-let prevSigs={};
-
-// ── FORMAT HELPERS ──────────────────────────────────────
-const f2=(n,d=2)=>n==null?'—':Number(n).toLocaleString('en-AU',{minimumFractionDigits:d,maximumFractionDigits:d});
-const fP=(n)=>n>=1000?f2(n,2):n>=1?f2(n,3):f2(n,6);
-const fB=(n)=>{
-  if(!n)return '—';
-  if(n>=1e12)return '$'+f2(n/1e12,2)+'T';
-  if(n>=1e9) return '$'+f2(n/1e9,2)+'B';
-  if(n>=1e6) return '$'+f2(n/1e6,2)+'M';
-  return '$'+f2(n,0);
-};
-const gc=(v)=>v>=0?'g':'r';
-const gs=(v)=>v>=0?'+':'';
-const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
-
-// ── RSI ─────────────────────────────────────────────────
-function calcRSI(prices,period=14){
-  if(!prices||prices.length<period+1)return null;
-  let g=0,l=0;
-  for(let i=1;i<=period;i++){const d=prices[i]-prices[i-1];d>=0?g+=d:l-=d;}
-  let ag=g/period,al=l/period;
-  for(let i=period+1;i<prices.length;i++){
-    const d=prices[i]-prices[i-1];
-    ag=(ag*(period-1)+Math.max(d,0))/period;
-    al=(al*(period-1)+Math.max(-d,0))/period;
-  }
-  return al===0?100:100-(100/(1+ag/al));
-}
-
-// ── SIGNAL ENGINE ────────────────────────────────────────
-function sig(rsi,c24,c7){
-  const r=rsi??50,c=c24??0,c7v=c7??0;
-  if(r<=25)                    return {s:'BUY', str:'🔥 Strong',  why:'RSI Deeply Oversold'};
-  if(r>=75)                    return {s:'SELL',str:'🔥 Strong',  why:'RSI Deeply Overbought'};
-  if(r<=32&&c<-4)              return {s:'BUY', str:'💪 Good',    why:'Oversold + Dip'};
-  if(r>=68&&c>4)               return {s:'SELL',str:'💪 Good',    why:'Overbought + Spike'};
-  if(r<40&&c7v<-8)             return {s:'BUY', str:'👍 Moderate',why:'Weekly Dip Buy'};
-  if(r>62&&c7v>10)             return {s:'SELL',str:'👍 Moderate',why:'Weekly Overextended'};
-  if(r<45&&c>1)                return {s:'BUY', str:'📈 Weak',    why:'Bouncing from Low'};
-  if(r>55&&c<-1)               return {s:'SELL',str:'📉 Weak',    why:'Fading from High'};
-  return                              {s:'HOLD',str:'—',          why:'Neutral Zone'};
-}
-
-// ── FETCH AUD RATE ───────────────────────────────────────
-async function fetchAUD(){
-  try{const r=await fetch('https://api.exchangerate-api.com/v4/latest/USD');const d=await r.json();audRate=d.rates.AUD||AUD_FALLBACK;}
-  catch{audRate=AUD_FALLBACK;}
-}
-
-// ── FETCH CRYPTO ─────────────────────────────────────────
-async function fetchCrypto(){
-  try{
-    const url='https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=15&page=1&sparkline=true&price_change_percentage=24h%2C7d';
-    const r=await fetch(url);
-    if(!r.ok)throw new Error(r.status);
-    cryptoData=await r.json();
-    renderCrypto();updateStats();
-  }catch{
-    document.getElementById('cryptoTable').innerHTML='<div class="loading" style="color:var(--red)">⚠️ CoinGecko rate limited — data will load on next refresh</div>';
-  }
-}
-
-// ── FINNHUB API KEY ──────────────────────────────────────
-function getKey(){return localStorage.getItem('finnhub_key')||'';}
-function saveKey(){
-  const k=document.getElementById('keyInput').value.trim();
-  if(!k){showToast('INFO','No key entered','Paste your Finnhub API key first');return;}
-  localStorage.setItem('finnhub_key',k);
-  document.getElementById('keyBanner').style.display='none';
-  showToast('INFO','✅ Key saved','Loading stock data now…');
-  fetchAllStocks();
-}
-
-// ── FETCH STOCKS (Finnhub) ────────────────────────────────
-async function fetchFinnhubQuote(sym,token){
-  try{
-    const r=await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${token}`);
-    if(!r.ok)return null;
-    const d=await r.json();
-    return d.c>0?d:null;
-  }catch{return null;}
-}
-
-function normalizeStock(sym,q){
-  if(!q)return null;
-  const chgPct=q.dp||0;
-  // Estimate 52w range from daily range (expanded ×3 as rough proxy)
-  const hi52=Math.max(q.h,q.pc)*(1+Math.abs(chgPct)/100*3+0.05);
-  const lo52=Math.min(q.l,q.pc)*(1-Math.abs(chgPct)/100*3-0.05);
-  return{
-    symbol:sym, shortName:STOCK_NAMES[sym]||sym,
-    regularMarketPrice:q.c, regularMarketChangePercent:chgPct,
-    fiftyTwoWeekHigh:hi52, fiftyTwoWeekLow:lo52,
-    marketCap:null, regularMarketVolume:null,
-    dayHigh:q.h, dayLow:q.l, prevClose:q.pc,
-  };
-}
-
-async function fetchAllStocks(){
-  const token=getKey();
-  const needKey=el=>{
-    document.getElementById(el).innerHTML=`
-      <div class="loading" style="flex-direction:column;gap:12px">
-        <div style="font-size:14px;color:var(--txt2)">🔑 Enter your free Finnhub API key above to load stock data</div>
-        <div style="font-size:12px;color:var(--txt3)">Get a free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a> — takes 30 seconds</div>
-      </div>`;
-  };
-  if(!token){
-    document.getElementById('keyBanner').style.display='block';
-    needKey('usTable'); needKey('asxTable'); return;
-  }
-  document.getElementById('keyBanner').style.display='none';
-
-  // Fetch US via Finnhub, ASX via Yahoo Finance (Finnhub free tier is US-only)
-  const usQuotes = await Promise.all(US_SYMS.map(s=>fetchFinnhubQuote(s,token)));
-  usData = US_SYMS.map((s,i)=>normalizeStock(s,usQuotes[i])).filter(Boolean);
-
-  if(!usData.length){
-    showToast('INFO','⚠️ Invalid API key','Check your Finnhub key and try again');
-    document.getElementById('keyBanner').style.display='block';
-    needKey('usTable');
-  } else {
-    renderStocks('us',usData,'usTable');
-  }
-
-  // ASX via Yahoo Finance (no key needed, uses allorigins proxy)
-  await fetchASX();
-  updateAlerts();
-}
-
-// ── FETCH SINGLE ASX STOCK via Yahoo v8 chart (less blocked than batch v7) ───
-async function fetchYahooChart(sym){
-  const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d&includePrePost=false`;
-  const yUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d&includePrePost=false`;
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl2)}`,
-    `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`,
-  ];
-  for(const url of proxies){
-    try{
-      const r = await fetch(url, {signal: AbortSignal.timeout(7000)});
-      if(!r.ok) continue;
-      const d = await r.json();
-      const meta = d?.chart?.result?.[0]?.meta;
-      if(meta && meta.regularMarketPrice > 0){
-        const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
-        const chgPct = prev > 0 ? ((meta.regularMarketPrice - prev) / prev * 100) : 0;
-        return {
-          symbol: sym,
-          shortName: STOCK_NAMES[sym] || sym,
-          regularMarketPrice: meta.regularMarketPrice,
-          regularMarketChangePercent: meta.regularMarketChangePercent || chgPct,
-          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh || meta.regularMarketPrice * 1.2,
-          fiftyTwoWeekLow:  meta.fiftyTwoWeekLow  || meta.regularMarketPrice * 0.8,
-          marketCap: null,
-          regularMarketVolume: meta.regularMarketVolume || null,
-        };
-      }
-    }catch{}
-  }
-  return null;
-}
-
-// ── FETCH ALL ASX (individual chart requests — avoids bulk rate limits) ────
-async function fetchASX(){
-  document.getElementById('asxTable').innerHTML='<div class="loading"><div class="spin"></div> Fetching ASX stocks…</div>';
-  // Stagger requests slightly to avoid simultaneous rate limiting
-  const results = [];
-  for(let i=0; i<ASX_SYMS.length; i++){
-    results.push(fetchYahooChart(ASX_SYMS[i]));
-    if(i % 5 === 4) await new Promise(r=>setTimeout(r,300)); // small pause every 5 stocks
-  }
-  const resolved = await Promise.all(results);
-  asxData = resolved.filter(Boolean);
-
-  if(asxData.length > 0){
-    renderStocks('asx', asxData, 'asxTable');
-  } else {
-    document.getElementById('asxTable').innerHTML=`
-      <div class="loading" style="flex-direction:column;gap:8px;color:var(--yellow)">
-        <div>⚠️ ASX data unavailable — all proxies rate limited</div>
-        <div style="font-size:12px;color:var(--txt3)">Will retry on next refresh · US stocks &amp; crypto are still live</div>
-      </div>`;
-  }
-}
-
-// ── RENDER CRYPTO ────────────────────────────────────────
-function renderCrypto(){
-  if(!cryptoData.length)return;
-  let rows=cryptoData.map(c=>{
-    const sp=c.sparkline_in_7d?.price||[];
-    const rsi=calcRSI(sp);
-    const c24=c.price_change_percentage_24h;
-    const c7=c.price_change_percentage_7d_in_currency;
-    const s=sig(rsi,c24,c7);
-    return{...c,rsi,s,c24,c7};
+function updateStats() {
+  const all = TSP.cryptoData.map(c => {
+    const sp = c.sparkline_in_7d?.price || [];
+    const rsi = calcRSI(sp);
+    return { name: c.symbol.toUpperCase(), sig: getSignal(rsi, c.price_change_percentage_24h, c.price_change_percentage_7d_in_currency) };
   });
-  if(filters.crypto==='buy')  rows=rows.filter(r=>r.s.s==='BUY');
-  if(filters.crypto==='sell') rows=rows.filter(r=>r.s.s==='SELL');
-
-  document.getElementById('cryptoTable').innerHTML=`
-  <table class="tbl">
-    <thead><tr>
-      <th>#</th><th>Asset</th><th>Price (USD)</th><th>Price (AUD)</th>
-      <th>24h</th><th>7d</th><th>RSI 14</th><th>Mkt Cap</th><th>Volume 24h</th><th>Signal</th>
-    </tr></thead>
-    <tbody>${rows.map(c=>{
-      const rsiCol=c.rsi<30?'var(--green)':c.rsi>70?'var(--red)':'var(--yellow)';
-      const rsiPct=c.rsi?cl(c.rsi,0,100):50;
-      return`<tr>
-        <td style="color:var(--txt3)">${c.market_cap_rank}</td>
-        <td><div style="display:flex;align-items:center;gap:10px">
-          <img src="${c.image}" width="28" height="28" style="border-radius:50%" onerror="this.style.display='none'">
-          <div><div class="asset-name">${c.name}</div><div class="asset-sub">${c.symbol.toUpperCase()}</div></div>
-        </div></td>
-        <td class="mono">$${fP(c.current_price)}</td>
-        <td class="mono" style="color:var(--txt2)">A$${fP(c.current_price*audRate)}</td>
-        <td><span class="badge ${gc(c.c24)}">${gs(c.c24)}${f2(c.c24)}%</span></td>
-        <td><span class="badge ${gc(c.c7)}">${gs(c.c7)}${f2(c.c7)}%</span></td>
-        <td><div class="rsi-wrap">
-          <span class="rsi-num" style="color:${rsiCol}">${c.rsi?f2(c.rsi,1):'—'}</span>
-          <div class="rsi-track"><div class="rsi-fill" style="width:${rsiPct}%;background:${rsiCol}"></div></div>
-        </div></td>
-        <td class="mono" style="font-size:12px">${fB(c.market_cap)}</td>
-        <td class="mono" style="font-size:12px">${fB(c.total_volume)}</td>
-        <td><span class="sig ${c.s.s}">${c.s.s==='BUY'?'▲':c.s.s==='SELL'?'▼':'●'} ${c.s.s}</span>
-          <div style="font-size:11px;color:var(--txt3);margin-top:3px">${c.s.why}</div></td>
-      </tr>`;
-    }).join('')}</tbody>
-  </table>`;
-  detectChanges(rows,'crypto');
-}
-
-// ── RENDER STOCKS ────────────────────────────────────────
-function renderStocks(type,data,elId){
-  if(!data.length){
-    document.getElementById(elId).innerHTML='<div class="loading" style="color:var(--yellow)">⚠️ Stock data unavailable — check CORS proxy or try refreshing</div>';
-    return;
-  }
-  const flt=filters[type];
-  let rows=data.map(s=>{
-    const c24=s.regularMarketChangePercent||0;
-    const hi=s.fiftyTwoWeekHigh||s.regularMarketPrice;
-    const lo=s.fiftyTwoWeekLow||s.regularMarketPrice;
-    const pr=s.regularMarketPrice||0;
-    const range=hi-lo;
-    const pos=range>0?((pr-lo)/range)*100:50;
-    const rsi=cl(pos*0.7+(c24>0?10:-10)+15,5,95);
-    const s2=sig(rsi,c24,null);
-    const audP=type==='us'?pr*audRate:pr;
-    return{...s,c24,rsi,s:s2,audP};
-  });
-  if(flt==='buy')  rows=rows.filter(r=>r.s.s==='BUY');
-  if(flt==='sell') rows=rows.filter(r=>r.s.s==='SELL');
-  const cur=type==='us'?'USD':'AUD';
-
-  document.getElementById(elId).innerHTML=`
-  <table class="tbl">
-    <thead><tr>
-      <th>Stock</th><th>Price (${cur})</th>${type==='us'?'<th>Price (AUD)</th>':''}
-      <th>24h</th><th>52W Range</th><th>Trend RSI</th><th>Mkt Cap</th><th>Volume</th><th>Signal</th>
-    </tr></thead>
-    <tbody>${rows.map(s=>{
-      const rsiCol=s.rsi<35?'var(--green)':s.rsi>65?'var(--red)':'var(--yellow)';
-      const rangePct=s.fiftyTwoWeekHigh>s.fiftyTwoWeekLow?((s.regularMarketPrice-s.fiftyTwoWeekLow)/(s.fiftyTwoWeekHigh-s.fiftyTwoWeekLow)*100).toFixed(0):'—';
-      return`<tr>
-        <td><div class="asset-name">${s.shortName||s.symbol}</div><div class="asset-sub">${s.symbol}</div></td>
-        <td class="mono">$${fP(s.regularMarketPrice)}</td>
-        ${type==='us'?`<td class="mono" style="color:var(--txt2)">A$${fP(s.audP)}</td>`:''}
-        <td><span class="badge ${gc(s.c24)}">${gs(s.c24)}${f2(s.c24)}%</span></td>
-        <td><div style="font-size:11px;color:var(--txt3)">${rangePct}% of 52W</div>
-          <div style="font-size:11px;color:var(--txt3)">$${fP(s.fiftyTwoWeekLow)}–$${fP(s.fiftyTwoWeekHigh)}</div></td>
-        <td><div class="rsi-wrap">
-          <span class="rsi-num" style="color:${rsiCol}">${f2(s.rsi,1)}</span>
-          <div class="rsi-track"><div class="rsi-fill" style="width:${cl(s.rsi,0,100)}%;background:${rsiCol}"></div></div>
-        </div></td>
-        <td class="mono" style="font-size:12px">${fB(s.marketCap)}</td>
-        <td class="mono" style="font-size:12px">${fB(s.regularMarketVolume)}</td>
-        <td><span class="sig ${s.s.s}">${s.s.s==='BUY'?'▲':s.s.s==='SELL'?'▼':'●'} ${s.s.s}</span>
-          <div style="font-size:11px;color:var(--txt3);margin-top:3px">${s.s.why}</div></td>
-      </tr>`;
-    }).join('')}</tbody>
-  </table>`;
-  detectChanges(rows,type);
-}
-
-// ── STAT CARDS ───────────────────────────────────────────
-function updateStats(){
-  const all=cryptoData.map(c=>{
-    const sp=c.sparkline_in_7d?.price||[];
-    const rsi=calcRSI(sp);
-    return{name:c.symbol.toUpperCase(),s:sig(rsi,c.price_change_percentage_24h,c.price_change_percentage_7d_in_currency)};
-  });
-  const buys=all.filter(a=>a.s.s==='BUY');
-  const sells=all.filter(a=>a.s.s==='SELL');
-  document.getElementById('buyCount').textContent=buys.length;
-  document.getElementById('sellCount').textContent=sells.length;
-  document.getElementById('buyList').textContent=buys.slice(0,5).map(a=>a.name).join(', ')||'None';
-  document.getElementById('sellList').textContent=sells.slice(0,5).map(a=>a.name).join(', ')||'None';
-  const btc=cryptoData.find(c=>c.id==='bitcoin');
-  if(btc){
-    const tot=cryptoData.reduce((s,c)=>s+(c.market_cap||0),0);
-    document.getElementById('btcDom').textContent=((btc.market_cap/tot)*100).toFixed(1)+'%';
-    document.getElementById('btcPrice').textContent='BTC $'+fP(btc.current_price);
-    document.getElementById('totalMcap').textContent=fB(tot);
-    const avg=cryptoData.reduce((s,c)=>s+(c.price_change_percentage_24h||0),0)/cryptoData.length;
-    document.getElementById('mcapChange').innerHTML=`<span class="${gc(avg)}">${gs(avg)}${f2(avg)}% avg 24h</span>`;
+  const buys = all.filter(a => a.sig.s === 'BUY');
+  const sells = all.filter(a => a.sig.s === 'SELL');
+  document.getElementById('buyCount').textContent = buys.length;
+  document.getElementById('sellCount').textContent = sells.length;
+  document.getElementById('buyList').textContent = buys.slice(0,4).map(a=>a.name).join(', ') || 'None';
+  document.getElementById('sellList').textContent = sells.slice(0,4).map(a=>a.name).join(', ') || 'None';
+  const btc = TSP.cryptoData.find(c => c.id === 'bitcoin');
+  if (btc) {
+    const tot = TSP.cryptoData.reduce((s,c) => s+(c.market_cap||0), 0);
+    document.getElementById('btcDom').textContent = ((btc.market_cap/tot)*100).toFixed(1)+'%';
+    document.getElementById('btcPrice').textContent = 'BTC $'+fPrice(btc.current_price);
+    document.getElementById('totalMcap').textContent = fBig(tot);
+    const avg = TSP.cryptoData.reduce((s,c) => s+(c.price_change_percentage_24h||0),0)/TSP.cryptoData.length;
+    document.getElementById('mcapChg').innerHTML = `<span class="${gc(avg)}">${gs(avg)}${f2(avg)}% avg 24h</span>`;
   }
   updateAlerts();
 }
 
-// ── ALERTS GRID ──────────────────────────────────────────
-function updateAlerts(){
-  const items=[];
-  cryptoData.forEach(c=>{
-    const sp=c.sparkline_in_7d?.price||[];
-    const rsi=calcRSI(sp);
-    const s=sig(rsi,c.price_change_percentage_24h,c.price_change_percentage_7d_in_currency);
-    if(s.s!=='HOLD') items.push({name:c.name,sym:c.symbol.toUpperCase(),type:'Crypto',
-      price:'$'+fP(c.current_price),priceAUD:'A$'+fP(c.current_price*audRate),chg:c.price_change_percentage_24h,s,rsi});
+function updateAlerts() {
+  const items = [];
+  TSP.cryptoData.forEach(c => {
+    const sp = c.sparkline_in_7d?.price || [];
+    const rsi = calcRSI(sp);
+    const s = getSignal(rsi, c.price_change_percentage_24h, c.price_change_percentage_7d_in_currency);
+    if (s.s !== 'HOLD') items.push({
+      name: c.name, type:'Crypto', signal: s.s, str: s.str, why: s.why,
+      price: c.current_price, audPrice: c.current_price * TSP.audRate,
+      c24: c.price_change_percentage_24h, c7: c.price_change_percentage_7d_in_currency,
+      rsi, high52: null, low52: null,
+    });
   });
-  [...usData,...asxData].forEach(s=>{
-    const c24=s.regularMarketChangePercent||0;
-    const hi=s.fiftyTwoWeekHigh||s.regularMarketPrice,lo=s.fiftyTwoWeekLow||s.regularMarketPrice,pr=s.regularMarketPrice||0;
-    const range=hi-lo,pos=range>0?((pr-lo)/range)*100:50;
-    const rsi=cl(pos*0.7+(c24>0?10:-10)+15,5,95);
-    const sg=sig(rsi,c24,null);
-    if(sg.s!=='HOLD') items.push({name:s.shortName||s.symbol,sym:s.symbol,
-      type:s.symbol.includes('.AX')?'ASX':'US Stock',price:'$'+fP(pr),
-      priceAUD:s.symbol.includes('.AX')?'A$'+fP(pr):'A$'+fP(pr*audRate),chg:c24,s:sg,rsi});
+  [...TSP.usData, ...TSP.asxData].forEach(s => {
+    const c24 = s.regularMarketChangePercent || 0;
+    const hi = s.fiftyTwoWeekHigh || s.regularMarketPrice;
+    const lo = s.fiftyTwoWeekLow  || s.regularMarketPrice;
+    const pr = s.regularMarketPrice || 0;
+    const range = hi-lo, pos = range>0?((pr-lo)/range)*100:50;
+    const rsi = cl(pos*0.7+(c24>0?10:-10)+15,5,95);
+    const sig = getSignal(rsi, c24, null);
+    if (sig.s !== 'HOLD') items.push({
+      name: s.shortName || s.symbol, type: s.symbol.includes('.AX') ? 'ASX' : 'US Stock',
+      signal: sig.s, str: sig.str, why: sig.why, price: pr,
+      audPrice: s.symbol.includes('.AX') ? pr : pr * TSP.audRate,
+      c24, c7: null, rsi, high52: hi, low52: lo,
+    });
   });
-  items.sort((a,b)=>{
-    const sc=i=>i.s.str.includes('Strong')?3:i.s.str.includes('Good')?2:1;
-    return sc(b)-sc(a);
-  });
-  const top=items.slice(0,6);
-  if(!top.length){
-    document.getElementById('alertsGrid').innerHTML='<div class="loading" style="grid-column:1/-1;color:var(--txt3)">✅ No strong signals — all markets in neutral zone right now</div>';
+  items.sort((a,b) => b.str - a.str);
+  const top = items.slice(0,6);
+  if (!top.length) {
+    document.getElementById('alertsGrid').innerHTML = '<div class="loading" style="grid-column:1/-1;color:var(--text3)">No strong signals across all markets currently · All in neutral zone</div>';
     return;
   }
-  document.getElementById('alertsGrid').innerHTML=top.map(i=>`
-    <div class="alert-item">
-      <div class="alert-top">
-        <div><div class="alert-name">${i.name}</div>
-          <div class="alert-type">${i.type} · ${i.s.str}</div></div>
-        <span class="sig ${i.s.s}">${i.s.s==='BUY'?'▲':'▼'} ${i.s.s}</span>
+  document.getElementById('alertsGrid').innerHTML = top.map(i => `
+    <div class="alert-card ${i.signal}" onclick="openModal(${JSON.stringify(i).replace(/"/g,'&quot;')})">
+      <div class="alert-head">
+        <div>
+          <div class="alert-name">${i.name}</div>
+          <div class="alert-type">${i.type} · ${i.str===3?'Strong':i.str===2?'Moderate':'Weak'} Signal</div>
+        </div>
+        <span class="signal-badge ${i.signal}">${i.signal==='BUY'?'▲':'▼'} ${i.signal}</span>
       </div>
-      <div class="alert-price">${i.price}</div>
-      <div style="font-size:12px">${i.priceAUD} · <span class="${gc(i.chg)}">${gs(i.chg)}${f2(i.chg)}%</span> · ${i.s.why}</div>
+      <div class="alert-price">$${fPrice(i.price)}</div>
+      <div class="alert-meta"><span class="${gc(i.c24)}">${gs(i.c24)}${f2(i.c24)}%</span> today · ${i.why}</div>
     </div>`).join('');
 }
 
-// ── SIGNAL CHANGE DETECTION ──────────────────────────────
-function detectChanges(rows,market){
-  rows.forEach(r=>{
-    const key=`${market}-${r.id||r.symbol}`;
-    const nw=r.s?.s||r.sig?.signal;
-    const old=prevSigs[key];
-    if(old&&old!==nw&&(nw==='BUY'||nw==='SELL')){
-      const name=r.name||r.shortName||r.symbol;
-      const price=r.current_price||r.regularMarketPrice;
-      triggerAlert(nw,name,`Signal → ${nw} · ${r.s?.why||r.sig?.reason} · $${fP(price)}`);
-    }
-    if(nw)prevSigs[key]=nw;
-  });
-}
-
-// ── NOTIFICATIONS ────────────────────────────────────────
-async function toggleNotifications(){
-  if(!notifOn){
-    const p=await Notification.requestPermission();
-    notifOn=p==='granted';
-    document.getElementById('notifBtn').textContent=notifOn?'🔔 Alerts On':'🔕 Denied';
-    document.getElementById('notifBtn').classList.toggle('on',notifOn);
-    showToast(notifOn?'INFO':'INFO',notifOn?'✅ Push alerts enabled':'⚠️ Permission denied',
-      notifOn?'You\'ll be notified when signals change':'Enable in browser settings & try again');
-  }else{
-    notifOn=false;
-    document.getElementById('notifBtn').textContent='🔔 Enable Alerts';
-    document.getElementById('notifBtn').classList.remove('on');
-    showToast('INFO','🔕 Alerts disabled','Push notifications turned off');
-  }
-}
-
-function triggerAlert(type,name,msg){
-  showToast(type,`${type==='BUY'?'🟢 BUY SIGNAL':'🔴 SELL SIGNAL'}: ${name}`,msg);
-  if(notifOn&&Notification.permission==='granted'){
-    new Notification(`${type}: ${name}`,{body:msg,icon:'https://cdn-icons-png.flaticon.com/512/2910/2910763.png',tag:name});
-  }
-}
-
-function showToast(type,title,msg){
-  const el=document.createElement('div');
-  el.className=`toast ${type}`;
-  el.innerHTML=`<div class="toast-ico">${type==='BUY'?'🟢':type==='SELL'?'🔴':'ℹ️'}</div>
-    <div><div class="toast-title">${title}</div><div class="toast-msg">${msg}</div></div>`;
-  document.getElementById('toasts').prepend(el);
-  setTimeout(()=>el.remove(),6000);
-}
-
-// ── TABS ─────────────────────────────────────────────────
-function switchTab(market,filter,el){
-  filters[market]=filter;
-  el.closest('.tabs').querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on');
-  if(market==='crypto') renderCrypto();
-  else if(market==='us') renderStocks('us',usData,'usTable');
-  else renderStocks('asx',asxData,'asxTable');
-}
-
-// ── PORTFOLIO ────────────────────────────────────────────
-function addPortRow(){
-  portRowId++;
-  const id=portRowId;
-  const opts=PORT_ASSETS.map(a=>`<option value="${a.sym}">${a.sym}${a.type==='custom'?' (Custom)':''}</option>`).join('');
-  const row=document.createElement('div');
-  row.className='port-row'; row.id=`pr-${id}`;
-  row.innerHTML=`
-    <div class="fg"><select id="pSym-${id}" onchange="autoPrice(${id})">
-      <option value="">Select…</option>${opts}
-    </select></div>
+// Portfolio
+function addPortRow() {
+  TSP.portRowId++;
+  const id = TSP.portRowId;
+  const opts = PORT_ASSETS.map(a => `<option value="${a.sym}">${a.sym}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'port-row'; row.id = `pr-${id}`;
+  row.innerHTML = `
+    <div class="fg"><select id="pSym-${id}" onchange="autoPrice(${id})"><option value="">Select…</option>${opts}</select></div>
     <div class="fg"><input type="number" id="pQty-${id}" placeholder="e.g. 0.5" min="0" step="any"></div>
-    <div class="fg"><input type="number" id="pBuy-${id}" placeholder="Your buy price" min="0" step="any"></div>
-    <div class="fg"><input type="text" id="pCur-${id}" placeholder="Auto-fill…" readonly style="opacity:.6;cursor:default"></div>
-    <button class="btn btn-del" onclick="document.getElementById('pr-${id}').remove()">✕</button>`;
+    <div class="fg"><input type="number" id="pBuy-${id}" placeholder="Buy price" min="0" step="any"></div>
+    <div class="fg"><input type="text"   id="pCur-${id}" placeholder="Auto…" readonly style="opacity:.6;cursor:default"></div>
+    <button class="btn-del" onclick="document.getElementById('pr-${id}').remove()">✕</button>`;
   document.getElementById('portRows').appendChild(row);
 }
 
-function autoPrice(id){
-  const sym=document.getElementById(`pSym-${id}`)?.value;
-  if(!sym)return;
-  let price=null;
-  const coin=cryptoData.find(c=>c.symbol.toUpperCase()===sym||c.id===sym.toLowerCase());
-  if(coin) price=coin.current_price*audRate;
-  const us=usData.find(s=>s.symbol===sym);
-  if(us) price=us.regularMarketPrice*audRate;
-  const asx=asxData.find(s=>s.symbol===sym);
-  if(asx) price=asx.regularMarketPrice;
-  const el=document.getElementById(`pCur-${id}`);
-  if(el&&price){el.value='A$'+fP(price);el._num=price;}
+function autoPrice(id) {
+  const sym = document.getElementById(`pSym-${id}`)?.value;
+  if (!sym) return;
+  let price = null;
+  const coin = TSP.cryptoData.find(c => c.symbol.toUpperCase()===sym || c.id===sym.toLowerCase());
+  if (coin) price = coin.current_price * TSP.audRate;
+  const us = TSP.usData.find(s => s.symbol===sym);
+  if (us) price = us.regularMarketPrice * TSP.audRate;
+  const asx = TSP.asxData.find(s => s.symbol===sym);
+  if (asx) price = asx.regularMarketPrice;
+  const el = document.getElementById(`pCur-${id}`);
+  if (el && price) { el.value = 'A$' + fPrice(price); el._num = price; }
 }
 
-function calcPortfolio(){
-  const rows=document.querySelectorAll('[id^="pr-"]');
-  if(!rows.length){showToast('INFO','No assets','Click "+ Add Asset" first');return;}
-  const items=[];
-  let totVal=0,totCost=0;
-  rows.forEach(row=>{
-    const id=row.id.replace('pr-','');
-    const sym=document.getElementById(`pSym-${id}`)?.value||'Asset';
-    const qty=parseFloat(document.getElementById(`pQty-${id}`)?.value)||0;
-    const buyP=parseFloat(document.getElementById(`pBuy-${id}`)?.value)||0;
-    const curEl=document.getElementById(`pCur-${id}`);
-    const curP=curEl?._num||buyP||1;
-    if(qty>0){
-      const val=qty*curP,cost=qty*buyP;
-      items.push({sym,qty,buyP,curP,val,cost});
-      totVal+=val;totCost+=cost;
-    }
+function calcPortfolio() {
+  const rows = document.querySelectorAll('[id^="pr-"]');
+  if (!rows.length) { showToast('INFO','No assets','Add positions first'); return; }
+  const items = []; let totVal=0, totCost=0;
+  rows.forEach(row => {
+    const id = row.id.replace('pr-','');
+    const sym = document.getElementById(`pSym-${id}`)?.value || 'Asset';
+    const qty = parseFloat(document.getElementById(`pQty-${id}`)?.value) || 0;
+    const buyP= parseFloat(document.getElementById(`pBuy-${id}`)?.value) || 0;
+    const curEl= document.getElementById(`pCur-${id}`);
+    const curP = curEl?._num || buyP || 1;
+    if (qty > 0) { const val=qty*curP, cost=qty*buyP; items.push({sym,qty,buyP,curP,val,cost}); totVal+=val; totCost+=cost; }
   });
-  if(!items.length){showToast('INFO','No quantities','Enter qty for at least one asset');return;}
-  const pnl=totVal-totCost,pnlPct=totCost>0?(pnl/totCost*100):0;
+  if (!items.length) { showToast('INFO','No quantities','Enter qty for at least one asset'); return; }
+  const pnl=totVal-totCost, pnlPct=totCost>0?(pnl/totCost*100):0;
   const best=items.reduce((a,b)=>b.buyP>0&&((b.curP-b.buyP)/b.buyP)>((a.curP-a.buyP)/(a.buyP||1))?b:a);
-  document.getElementById('ptTotal').textContent='A$'+f2(totVal);
-  document.getElementById('ptChange').innerHTML=`<span class="${gc(pnl)}">${gs(pnl)}A$${f2(Math.abs(pnl))} (${gs(pnlPct)}${f2(pnlPct)}%)</span>`;
-  document.getElementById('ptBest').textContent=best.sym;
-  document.getElementById('portTotals').style.display='grid';
-
-  // Pie chart
-  if(pieChart)pieChart.destroy();
-  const ctx=document.getElementById('pieChart').getContext('2d');
-  pieChart=new Chart(ctx,{
+  document.getElementById('ptTotal').textContent = 'A$'+f2(totVal);
+  document.getElementById('ptChange').innerHTML = `<span class="${gc(pnl)}">${gs(pnl)}A$${f2(Math.abs(pnl))} (${gs(pnlPct)}${f2(pnlPct)}%)</span>`;
+  document.getElementById('ptBest').textContent = best.sym;
+  document.getElementById('portTotals').style.display = 'grid';
+  if (TSP.pieChart) TSP.pieChart.destroy();
+  const ctx = document.getElementById('pieChart').getContext('2d');
+  TSP.pieChart = new Chart(ctx, {
     type:'doughnut',
-    data:{labels:items.map(i=>i.sym),datasets:[{data:items.map(i=>i.val),backgroundColor:COLORS.slice(0,items.length),borderColor:'#111827',borderWidth:3,hoverOffset:10}]},
-    options:{responsive:true,maintainAspectRatio:true,plugins:{
-      legend:{display:false},
-      tooltip:{callbacks:{label:c=>{const p=(c.parsed/totVal*100).toFixed(1);return ` ${c.label}: A$${f2(c.parsed)} (${p}%)`;}}}
-    }}
+    data:{ labels:items.map(i=>i.sym), datasets:[{ data:items.map(i=>i.val), backgroundColor:CHART_COLORS.slice(0,items.length), borderColor:'var(--s1)', borderWidth:2, hoverOffset:6 }] },
+    options:{ responsive:false, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>{const p=(c.parsed/totVal*100).toFixed(1);return ` ${c.label}: A$${f2(c.parsed)} (${p}%)`;}}} } }
   });
-
-  document.getElementById('portLegend').innerHTML=items.map((it,i)=>{
+  document.getElementById('portLegend').innerHTML = items.map((it,i) => {
     const pct=(it.val/totVal*100).toFixed(1);
     const ret=it.buyP>0?((it.curP-it.buyP)/it.buyP*100):0;
-    return`<div class="leg-item">
-      <div class="leg-dot" style="background:${COLORS[i]}"></div>
-      <div style="flex:1"><span style="font-weight:600">${it.sym}</span>
-        <span style="color:var(--txt3)"> ${pct}% · A$${f2(it.val)}</span></div>
-      <span class="${gc(ret)}" style="font-size:11px;font-weight:600">${gs(ret)}${f2(ret)}%</span>
+    return `<div class="leg-row">
+      <div class="leg-dot" style="background:${CHART_COLORS[i]}"></div>
+      <div style="flex:1"><span style="font-weight:600">${it.sym}</span> <span style="color:var(--text3)">${pct}% · A$${f2(it.val)}</span></div>
+      <span class="${gc(ret)}" style="font-weight:700">${gs(ret)}${f2(ret)}%</span>
     </div>`;
   }).join('');
-  showToast('INFO','📊 Portfolio calculated',`Total: A$${f2(totVal)} · P&L: ${gs(pnl)}A$${f2(Math.abs(pnl))}`);
+  showToast('INFO','Portfolio calculated',`Total: A$${f2(totVal)} · P&L: ${gs(pnl)}A$${f2(Math.abs(pnl))}`);
 }
 
-// ── REFRESH ──────────────────────────────────────────────
-async function refreshAll(){
-  const btn=document.getElementById('refreshBtn');
-  btn.textContent='⟳ Refreshing…';
-  countdown=REFRESH_SEC;
-  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
-  const t=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
-  btn.textContent=`⟳ Updated ${t}`;
-  setTimeout(()=>btn.textContent='⟳ Refresh',4000);
+let countdownTimer;
+function startCountdown() {
+  clearInterval(countdownTimer);
+  TSP.countdown = REFRESH_SEC;
+  countdownTimer = setInterval(() => {
+    TSP.countdown--;
+    const el = document.getElementById('countdown');
+    if (el) el.textContent = TSP.countdown + 's';
+    if (TSP.countdown <= 0) { refreshPage(); TSP.countdown = REFRESH_SEC; }
+  }, 1000);
 }
 
-// ── AUTH ─────────────────────────────────────────────────
-const DB_KEY = 'tsp_users';
-const SESSION_KEY = 'tsp_session';
-
-async function hashPass(password) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+async function refreshPage() {
+  const btn = document.getElementById('refreshBtn');
+  if (btn) btn.textContent = '⟳ Loading…';
+  await Promise.all([fetchAUD(), fetchCrypto(), fetchAllStocks(), fetchASX()]);
+  if (btn) { btn.textContent = '⟳ Refresh'; }
+  startCountdown();
 }
 
-function getUsers() { return JSON.parse(localStorage.getItem(DB_KEY)||'{}'); }
-function saveUsers(u) { localStorage.setItem(DB_KEY, JSON.stringify(u)); }
-function getSession() { return JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null'); }
-function setSession(u) { sessionStorage.setItem(SESSION_KEY, JSON.stringify(u)); }
-
-function switchAuthTab(tab) {
-  document.getElementById('formLogin').style.display  = tab==='login'  ? '' : 'none';
-  document.getElementById('formSignup').style.display = tab==='signup' ? '' : 'none';
-  document.getElementById('tabLogin').classList.toggle('on',  tab==='login');
-  document.getElementById('tabSignup').classList.toggle('on', tab==='signup');
-  document.getElementById('authErr').style.display='none';
-  document.getElementById('authOk').style.display='none';
-}
-
-function showAuthErr(msg) {
-  const el=document.getElementById('authErr');
-  el.textContent=msg; el.style.display='block';
-  document.getElementById('authOk').style.display='none';
-}
-function showAuthOk(msg) {
-  const el=document.getElementById('authOk');
-  el.textContent=msg; el.style.display='block';
-  document.getElementById('authErr').style.display='none';
-}
-
-async function doSignup() {
-  const user = document.getElementById('signupUser').value.trim().toLowerCase();
-  const pass = document.getElementById('signupPass').value;
-  const key  = document.getElementById('signupKey').value.trim();
-
-  if(!user) return showAuthErr('Please enter a username');
-  if(user.length < 3) return showAuthErr('Username must be at least 3 characters');
-  if(!pass || pass.length < 6) return showAuthErr('Password must be at least 6 characters');
-
-  const users = getUsers();
-  if(users[user]) return showAuthErr('Username already taken — try signing in instead');
-
-  const hash = await hashPass(pass);
-  users[user] = { hash, finnhubKey: key || '' };
-  saveUsers(users);
-
-  showAuthOk('✅ Account created! Signing you in…');
-  setTimeout(() => loginUser(user, key), 800);
-}
-
-async function doLogin() {
-  const user = document.getElementById('loginUser').value.trim().toLowerCase();
-  const pass = document.getElementById('loginPass').value;
-
-  if(!user || !pass) return showAuthErr('Please enter your username and password');
-
-  const users = getUsers();
-  if(!users[user]) return showAuthErr('Account not found — create one first');
-
-  const hash = await hashPass(pass);
-  if(hash !== users[user].hash) return showAuthErr('Incorrect password — try again');
-
-  loginUser(user, users[user].finnhubKey || '');
-}
-
-function loginUser(username, finnhubKey) {
-  setSession({ username });
-  document.getElementById('loginOverlay').style.display='none';
-
-  // Show user pill in header
-  const initials = username.slice(0,2).toUpperCase();
-  document.getElementById('userAvatar').textContent = initials;
-  document.getElementById('userLabel').textContent = username;
-  document.getElementById('userPill').style.display = 'flex';
-
-  // Auto-load their saved Finnhub key
-  if(finnhubKey) {
-    localStorage.setItem('finnhub_key', finnhubKey);
-    document.getElementById('keyBanner').style.display = 'none';
-  } else {
-    localStorage.removeItem('finnhub_key');
-  }
-
-  // Boot the dashboard
-  bootDashboard();
-  showToast('INFO',`👋 Welcome back, ${username}!`, finnhubKey ? 'Loading all markets…' : 'Enter your Finnhub key to load stocks');
-}
-
-function doLogout() {
-  sessionStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem('finnhub_key');
-  document.getElementById('userPill').style.display='none';
-  document.getElementById('loginOverlay').style.display='flex';
-  document.getElementById('loginUser').value='';
-  document.getElementById('loginPass').value='';
-  showAuthErr('');
-  document.getElementById('authErr').style.display='none';
-}
-
-// Save Finnhub key also to user profile when they save it via banner
-const _origSaveKey = saveKey;
-function saveKey() {
-  const k = document.getElementById('keyInput').value.trim();
-  if(!k){ showToast('INFO','No key entered','Paste your Finnhub API key first'); return; }
-  localStorage.setItem('finnhub_key', k);
-
-  // Also persist to user profile
-  const session = getSession();
-  if(session) {
-    const users = getUsers();
-    if(users[session.username]) {
-      users[session.username].finnhubKey = k;
-      saveUsers(users);
-    }
-  }
-  document.getElementById('keyBanner').style.display='none';
-  showToast('INFO','✅ Key saved to your profile','Loading stock data now…');
-  fetchAllStocks();
-}
-
-// ── INIT ─────────────────────────────────────────────────
 async function bootDashboard() {
+  document.getElementById('appShell').style.display = 'flex';
   addPortRow(); addPortRow(); addPortRow();
   await Promise.all([fetchAUD(), fetchCrypto(), fetchAllStocks(), fetchASX()]);
-  setInterval(()=>{
-    countdown--;
-    document.getElementById('timerBadge').textContent=`Next: ${countdown}s`;
-    if(countdown<=0){ refreshAll(); countdown=REFRESH_SEC; }
-  },1000);
+  startCountdown();
+  showToast('INFO','TradeSignal Pro','Live data loaded · Click any signal for detailed analysis');
 }
 
-(async()=>{
-  const session = getSession();
-  if(session) {
-    // Resume existing session
-    const users = getUsers();
-    const userData = users[session.username];
-    if(userData) {
-      loginUser(session.username, userData.finnhubKey || '');
-      return;
-    }
-  }
-  // Show login screen
-  document.getElementById('loginOverlay').style.display='flex';
-})();
+// Mount shared components
+document.getElementById('loginMount').innerHTML = renderLoginScreen();
+document.getElementById('sidebarMount').innerHTML = renderSidebar('index.html');
+document.getElementById('topbarMount').innerHTML = renderTopbar('Market Overview');
+
+// Boot
+initAuth();
 </script>
 </body>
 </html>
