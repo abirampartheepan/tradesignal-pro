@@ -298,12 +298,27 @@
     <div id="cryptoTable"><div class="loading"><div class="spin"></div> Fetching crypto…</div></div>
   </div>
 
+  <!-- FINNHUB API KEY BANNER -->
+  <div id="keyBanner" class="card" style="display:none;margin-bottom:24px">
+    <div style="padding:20px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-weight:700;font-size:15px;margin-bottom:4px">🔑 Free Stock API Key Required</div>
+        <div style="font-size:12px;color:var(--txt3)">US &amp; ASX stocks use Finnhub — free, takes 30 seconds to set up. No credit card needed.</div>
+      </div>
+      <a href="https://finnhub.io/register" target="_blank" style="background:var(--blue-bg);border:1px solid var(--accent);color:var(--accent);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap">1. Get Free Key →</a>
+      <div style="display:flex;gap:8px;flex:1;min-width:220px">
+        <input id="keyInput" type="text" placeholder="Paste your Finnhub API key here…" style="flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--txt);padding:9px 12px;border-radius:8px;font-size:13px;outline:none">
+        <button onclick="saveKey()" style="background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">2. Save &amp; Load</button>
+      </div>
+    </div>
+  </div>
+
   <!-- US STOCKS -->
   <div class="card">
     <div class="card-head">
       <div>
         <div class="card-title">🇺🇸 US Stocks — NYSE / NASDAQ</div>
-        <div class="card-desc">Top 15 US stocks · 52-week trend signals · USD + AUD pricing</div>
+        <div class="card-desc">Top 15 US stocks · Live signals · USD + AUD pricing</div>
       </div>
       <div class="tabs">
         <div class="tab on" onclick="switchTab('us','all',this)">All</div>
@@ -385,12 +400,16 @@
 // ── CONFIG ──────────────────────────────────────────────
 const REFRESH_SEC = 60;
 const AUD_FALLBACK = 1.57;
-const PROXIES = [
-  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
-];
+// Hard-coded stock names (no extra API calls needed)
+const STOCK_NAMES = {
+  NVDA:'NVIDIA','AAPL':'Apple','MSFT':'Microsoft','AMZN':'Amazon','META':'Meta',
+  GOOGL:'Alphabet','TSLA':'Tesla','AMD':'AMD','JPM':'JPMorgan','V':'Visa',
+  NFLX:'Netflix','DIS':'Disney','COIN':'Coinbase','PLTR':'Palantir','SOFI':'SoFi',
+  'BHP.AX':'BHP Group','CBA.AX':'CommBank','CSL.AX':'CSL','ANZ.AX':'ANZ Bank',
+  'WBC.AX':'Westpac','NAB.AX':'NAB','WES.AX':'Wesfarmers','MQG.AX':'Macquarie',
+  'RIO.AX':'Rio Tinto','TLS.AX':'Telstra','FMG.AX':'Fortescue','WOW.AX':'Woolworths',
+  'GMG.AX':'Goodman Group','REA.AX':'REA Group','XRO.AX':'Xero'
+};
 
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
 const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
@@ -473,28 +492,71 @@ async function fetchCrypto(){
   }
 }
 
-// ── FETCH STOCKS ─────────────────────────────────────────
-async function fetchWithProxy(url){
-  for(const mkProxy of PROXIES){
-    try{
-      const r=await fetch(mkProxy(url),{signal:AbortSignal.timeout(6000)});
-      if(r.ok){const t=await r.text();return JSON.parse(t);}
-    }catch{}
-  }
-  return null;
+// ── FINNHUB API KEY ──────────────────────────────────────
+function getKey(){return localStorage.getItem('finnhub_key')||'';}
+function saveKey(){
+  const k=document.getElementById('keyInput').value.trim();
+  if(!k){showToast('INFO','No key entered','Paste your Finnhub API key first');return;}
+  localStorage.setItem('finnhub_key',k);
+  document.getElementById('keyBanner').style.display='none';
+  showToast('INFO','✅ Key saved','Loading stock data now…');
+  fetchAllStocks();
 }
 
-async function fetchStocks(syms){
+// ── FETCH STOCKS (Finnhub) ────────────────────────────────
+async function fetchFinnhubQuote(sym,token){
   try{
-    const yUrl=`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms.join(',')}&fields=regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap,fiftyTwoWeekHigh,fiftyTwoWeekLow,shortName,regularMarketChange`;
-    const d=await fetchWithProxy(yUrl);
-    return d?.quoteResponse?.result||[];
-  }catch{return [];}
+    const r=await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${token}`);
+    if(!r.ok)return null;
+    const d=await r.json();
+    return d.c>0?d:null;
+  }catch{return null;}
+}
+
+function normalizeStock(sym,q){
+  if(!q)return null;
+  const chgPct=q.dp||0;
+  // Estimate 52w range from daily range (expanded ×3 as rough proxy)
+  const hi52=Math.max(q.h,q.pc)*(1+Math.abs(chgPct)/100*3+0.05);
+  const lo52=Math.min(q.l,q.pc)*(1-Math.abs(chgPct)/100*3-0.05);
+  return{
+    symbol:sym, shortName:STOCK_NAMES[sym]||sym,
+    regularMarketPrice:q.c, regularMarketChangePercent:chgPct,
+    fiftyTwoWeekHigh:hi52, fiftyTwoWeekLow:lo52,
+    marketCap:null, regularMarketVolume:null,
+    dayHigh:q.h, dayLow:q.l, prevClose:q.pc,
+  };
 }
 
 async function fetchAllStocks(){
-  const [us,asx]=await Promise.all([fetchStocks(US_SYMS),fetchStocks(ASX_SYMS)]);
-  usData=us; asxData=asx;
+  const token=getKey();
+  const needKey=el=>{
+    document.getElementById(el).innerHTML=`
+      <div class="loading" style="flex-direction:column;gap:12px">
+        <div style="font-size:14px;color:var(--txt2)">🔑 Enter your free Finnhub API key above to load stock data</div>
+        <div style="font-size:12px;color:var(--txt3)">Get a free key at <a href="https://finnhub.io/register" target="_blank" style="color:var(--accent)">finnhub.io/register</a> — takes 30 seconds</div>
+      </div>`;
+  };
+  if(!token){
+    document.getElementById('keyBanner').style.display='block';
+    needKey('usTable'); needKey('asxTable'); return;
+  }
+  document.getElementById('keyBanner').style.display='none';
+
+  // Fetch all quotes in parallel (Finnhub free: 60 calls/min — we use 30)
+  const [usQuotes,asxQuotes]=await Promise.all([
+    Promise.all(US_SYMS.map(s=>fetchFinnhubQuote(s,token))),
+    Promise.all(ASX_SYMS.map(s=>fetchFinnhubQuote(s,token))),
+  ]);
+
+  usData=US_SYMS.map((s,i)=>normalizeStock(s,usQuotes[i])).filter(Boolean);
+  asxData=ASX_SYMS.map((s,i)=>normalizeStock(s,asxQuotes[i])).filter(Boolean);
+
+  if(!usData.length&&!asxData.length){
+    showToast('INFO','⚠️ Invalid API key','Check your Finnhub key and try again');
+    document.getElementById('keyBanner').style.display='block';
+    needKey('usTable'); needKey('asxTable'); return;
+  }
   renderStocks('us',usData,'usTable');
   renderStocks('asx',asxData,'asxTable');
   updateAlerts();
