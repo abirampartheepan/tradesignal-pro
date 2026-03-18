@@ -261,6 +261,54 @@ function updateAlerts() {
     </div>`).join('');
 }
 
+// ── PORTFOLIO PERSISTENCE ────────────────────────────
+function portSaveKey() {
+  const s = getSession();
+  return s ? `tsp_port_${s.username}` : 'tsp_port_guest';
+}
+
+function savePortfolio() {
+  const rows = document.querySelectorAll('[id^="pr-"]');
+  const data = [];
+  rows.forEach(row => {
+    const id   = row.id.replace('pr-','');
+    const sym  = document.getElementById(`pSym-${id}`)?.value || '';
+    const qty  = document.getElementById(`pQty-${id}`)?.value || '';
+    const buyP = document.getElementById(`pBuy-${id}`)?.value || '';
+    const curEl= document.getElementById(`pCur-${id}`);
+    const customPrice = (sym === 'CUSTOM' && curEl && !curEl.readOnly) ? curEl.value : '';
+    if (sym) data.push({ sym, qty, buyP, customPrice });
+  });
+  try { localStorage.setItem(portSaveKey(), JSON.stringify(data)); } catch {}
+}
+
+function loadPortfolio() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem(portSaveKey()) || 'null'); } catch {}
+  if (!data || !data.length) {
+    // No saved portfolio — add 3 blank starter rows
+    addPortRow(); addPortRow(); addPortRow();
+    return;
+  }
+  data.forEach(item => {
+    addPortRow();
+    const id = TSP.portRowId;
+    const symEl = document.getElementById(`pSym-${id}`);
+    const qtyEl = document.getElementById(`pQty-${id}`);
+    const buyEl = document.getElementById(`pBuy-${id}`);
+    if (symEl) symEl.value = item.sym;
+    if (qtyEl) qtyEl.value = item.qty;
+    if (buyEl) buyEl.value = item.buyP;
+    // Trigger price lookup (will fill in once live data arrives)
+    autoPrice(id);
+    // If custom, restore the typed price too
+    if (item.sym === 'CUSTOM' && item.customPrice) {
+      const curEl = document.getElementById(`pCur-${id}`);
+      if (curEl) { curEl.value = item.customPrice; curEl._num = parseFloat(item.customPrice) || null; }
+    }
+  });
+}
+
 // ── PORTFOLIO ROWS ───────────────────────────────────
 function addPortRow() {
   TSP.portRowId++;
@@ -269,17 +317,17 @@ function addPortRow() {
   row.className = 'port-row'; row.id = `pr-${id}`;
   row.innerHTML = `
     <div class="fg">
-      <select id="pSym-${id}" onchange="autoPrice(${id})">
+      <select id="pSym-${id}" onchange="autoPrice(${id});savePortfolio()">
         ${buildPortOptions()}
       </select>
     </div>
-    <div class="fg"><input type="number" id="pQty-${id}" placeholder="e.g. 0.5" min="0" step="any" oninput="if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
-    <div class="fg"><input type="number" id="pBuy-${id}" placeholder="Your buy price" min="0" step="any" oninput="if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
+    <div class="fg"><input type="number" id="pQty-${id}" placeholder="e.g. 0.5" min="0" step="any" oninput="savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
+    <div class="fg"><input type="number" id="pBuy-${id}" placeholder="Your buy price" min="0" step="any" oninput="savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)"></div>
     <div class="fg">
       <input type="text" id="pCur-${id}" placeholder="Select asset…" readonly
         style="opacity:.7;cursor:default;font-weight:600">
     </div>
-    <button class="btn-del" onclick="document.getElementById('pr-${id}').remove();if(TSP.portfolioCalculated)calcPortfolio(true)">✕</button>`;
+    <button class="btn-del" onclick="document.getElementById('pr-${id}').remove();savePortfolio();if(TSP.portfolioCalculated)calcPortfolio(true)">✕</button>`;
   document.getElementById('portRows').appendChild(row);
 }
 
@@ -290,7 +338,7 @@ function autoPrice(id) {
 
   if (sym === 'CUSTOM') {
     if (el) { el.value=''; el._num=null; el.removeAttribute('readonly'); el.placeholder='Enter price (AUD)'; el.style.opacity='1'; el.style.cursor='text'; }
-    el.oninput = () => { el._num = parseFloat(el.value)||null; if(TSP.portfolioCalculated)calcPortfolio(true); };
+    el.oninput = () => { el._num = parseFloat(el.value)||null; savePortfolio(); if(TSP.portfolioCalculated)calcPortfolio(true); };
     return;
   }
 
@@ -417,7 +465,7 @@ async function refreshPage() {
 
 async function bootDashboard() {
   document.getElementById('appShell').style.display = 'flex';
-  addPortRow(); addPortRow(); addPortRow();
+  loadPortfolio();
   await Promise.all([fetchAUD(), fetchCrypto(), fetchAllStocks(), fetchASX()]);
   startCountdown();
   showToast('INFO','TradeSignal Pro','Live data loaded · Click any signal for detailed analysis');
