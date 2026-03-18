@@ -408,11 +408,25 @@ const STOCK_NAMES = {
   'BHP.AX':'BHP Group','CBA.AX':'CommBank','CSL.AX':'CSL','ANZ.AX':'ANZ Bank',
   'WBC.AX':'Westpac','NAB.AX':'NAB','WES.AX':'Wesfarmers','MQG.AX':'Macquarie',
   'RIO.AX':'Rio Tinto','TLS.AX':'Telstra','FMG.AX':'Fortescue','WOW.AX':'Woolworths',
-  'GMG.AX':'Goodman Group','REA.AX':'REA Group','XRO.AX':'Xero'
+  'GMG.AX':'Goodman Group','REA.AX':'REA Group','XRO.AX':'Xero',
+  'ASX:BHP':'BHP Group','ASX:CBA':'CommBank','ASX:CSL':'CSL','ASX:ANZ':'ANZ Bank',
+  'ASX:WBC':'Westpac','ASX:NAB':'NAB','ASX:WES':'Wesfarmers','ASX:MQG':'Macquarie',
+  'ASX:RIO':'Rio Tinto','ASX:TLS':'Telstra','ASX:FMG':'Fortescue','ASX:WOW':'Woolworths',
+  'ASX:GMG':'Goodman Group','ASX:REA':'REA Group','ASX:XRO':'Xero'
 };
 
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
-const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
+// Finnhub uses "ASX:BHP" format, we map display symbol (BHP.AX) to Finnhub symbol (ASX:BHP)
+const ASX_SYMS = [
+  {display:'BHP.AX', fh:'ASX:BHP'}, {display:'CBA.AX', fh:'ASX:CBA'},
+  {display:'CSL.AX', fh:'ASX:CSL'}, {display:'ANZ.AX', fh:'ASX:ANZ'},
+  {display:'WBC.AX', fh:'ASX:WBC'}, {display:'NAB.AX', fh:'ASX:NAB'},
+  {display:'WES.AX', fh:'ASX:WES'}, {display:'MQG.AX', fh:'ASX:MQG'},
+  {display:'RIO.AX', fh:'ASX:RIO'}, {display:'TLS.AX', fh:'ASX:TLS'},
+  {display:'FMG.AX', fh:'ASX:FMG'}, {display:'WOW.AX', fh:'ASX:WOW'},
+  {display:'GMG.AX', fh:'ASX:GMG'}, {display:'REA.AX', fh:'ASX:REA'},
+  {display:'XRO.AX', fh:'ASX:XRO'},
+];
 
 const COLORS = ['#4a9eff','#00d084','#ff4757','#ffd32a','#a855f7','#f97316','#06b6d4','#ec4899','#84cc16','#f43f5e','#8b5cf6','#14b8a6','#fb923c','#a3e635','#e879f9'];
 const PORT_ASSETS = [
@@ -546,11 +560,12 @@ async function fetchAllStocks(){
   // Fetch all quotes in parallel (Finnhub free: 60 calls/min — we use 30)
   const [usQuotes,asxQuotes]=await Promise.all([
     Promise.all(US_SYMS.map(s=>fetchFinnhubQuote(s,token))),
-    Promise.all(ASX_SYMS.map(s=>fetchFinnhubQuote(s,token))),
+    Promise.all(ASX_SYMS.map(s=>fetchFinnhubQuote(s.fh,token))),
   ]);
 
   usData=US_SYMS.map((s,i)=>normalizeStock(s,usQuotes[i])).filter(Boolean);
-  asxData=ASX_SYMS.map((s,i)=>normalizeStock(s,asxQuotes[i])).filter(Boolean);
+  // Use display symbol (BHP.AX) for rendering, but fetch via Finnhub symbol (ASX:BHP)
+  asxData=ASX_SYMS.map((s,i)=>normalizeStock(s.display,asxQuotes[i])).filter(Boolean);
 
   if(!usData.length&&!asxData.length){
     showToast('INFO','⚠️ Invalid API key','Check your Finnhub key and try again');
