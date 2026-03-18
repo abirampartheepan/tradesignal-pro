@@ -678,43 +678,62 @@ async function fetchAllStocks(){
   updateAlerts();
 }
 
-// ── FETCH ASX (Yahoo Finance via allorigins proxy) ───────
-async function fetchASX(){
-  document.getElementById('asxTable').innerHTML='<div class="loading"><div class="spin"></div> Fetching ASX stocks…</div>';
-  const syms = ASX_SYMS.join(',');
+// ── FETCH SINGLE ASX STOCK via Yahoo v8 chart (less blocked than batch v7) ───
+async function fetchYahooChart(sym){
+  const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d&includePrePost=false`;
+  const yUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d&includePrePost=false`;
   const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.finance.yahoo.com/v7/finance/quote?symbols='+syms)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query2.finance.yahoo.com/v7/finance/quote?symbols='+syms)}`,
-    `https://corsproxy.io/?${encodeURIComponent('https://query1.finance.yahoo.com/v7/finance/quote?symbols='+syms)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(yUrl2)}`,
+    `https://corsproxy.io/?${encodeURIComponent(yUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`,
   ];
   for(const url of proxies){
     try{
-      const r = await fetch(url, {signal: AbortSignal.timeout(8000)});
+      const r = await fetch(url, {signal: AbortSignal.timeout(7000)});
       if(!r.ok) continue;
       const d = await r.json();
-      const results = d?.quoteResponse?.result;
-      if(results && results.length){
-        asxData = results.map(s=>({
-          symbol: s.symbol,
-          shortName: s.shortName || STOCK_NAMES[s.symbol] || s.symbol,
-          regularMarketPrice: s.regularMarketPrice || 0,
-          regularMarketChangePercent: s.regularMarketChangePercent || 0,
-          fiftyTwoWeekHigh: s.fiftyTwoWeekHigh || s.regularMarketPrice,
-          fiftyTwoWeekLow: s.fiftyTwoWeekLow || s.regularMarketPrice,
-          marketCap: s.marketCap || null,
-          regularMarketVolume: s.regularMarketVolume || null,
-        })).filter(s=>s.regularMarketPrice>0);
-        renderStocks('asx',asxData,'asxTable');
-        return;
+      const meta = d?.chart?.result?.[0]?.meta;
+      if(meta && meta.regularMarketPrice > 0){
+        const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
+        const chgPct = prev > 0 ? ((meta.regularMarketPrice - prev) / prev * 100) : 0;
+        return {
+          symbol: sym,
+          shortName: STOCK_NAMES[sym] || sym,
+          regularMarketPrice: meta.regularMarketPrice,
+          regularMarketChangePercent: meta.regularMarketChangePercent || chgPct,
+          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh || meta.regularMarketPrice * 1.2,
+          fiftyTwoWeekLow:  meta.fiftyTwoWeekLow  || meta.regularMarketPrice * 0.8,
+          marketCap: null,
+          regularMarketVolume: meta.regularMarketVolume || null,
+        };
       }
     }catch{}
   }
-  // All proxies failed — show helpful message
-  document.getElementById('asxTable').innerHTML=`
-    <div class="loading" style="flex-direction:column;gap:8px;color:var(--yellow)">
-      <div>⚠️ ASX data temporarily unavailable (proxy rate limited)</div>
-      <div style="font-size:12px;color:var(--txt3)">Will retry on next refresh · US stocks &amp; crypto are still live</div>
-    </div>`;
+  return null;
+}
+
+// ── FETCH ALL ASX (individual chart requests — avoids bulk rate limits) ────
+async function fetchASX(){
+  document.getElementById('asxTable').innerHTML='<div class="loading"><div class="spin"></div> Fetching ASX stocks…</div>';
+  // Stagger requests slightly to avoid simultaneous rate limiting
+  const results = [];
+  for(let i=0; i<ASX_SYMS.length; i++){
+    results.push(fetchYahooChart(ASX_SYMS[i]));
+    if(i % 5 === 4) await new Promise(r=>setTimeout(r,300)); // small pause every 5 stocks
+  }
+  const resolved = await Promise.all(results);
+  asxData = resolved.filter(Boolean);
+
+  if(asxData.length > 0){
+    renderStocks('asx', asxData, 'asxTable');
+  } else {
+    document.getElementById('asxTable').innerHTML=`
+      <div class="loading" style="flex-direction:column;gap:8px;color:var(--yellow)">
+        <div>⚠️ ASX data unavailable — all proxies rate limited</div>
+        <div style="font-size:12px;color:var(--txt3)">Will retry on next refresh · US stocks &amp; crypto are still live</div>
+      </div>`;
+  }
 }
 
 // ── RENDER CRYPTO ────────────────────────────────────────
