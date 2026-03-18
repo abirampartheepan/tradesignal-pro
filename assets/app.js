@@ -222,7 +222,8 @@ function persistKey(k) {
 }
 
 function saveKey() {
-  const k = document.getElementById('keyInput')?.value.trim();
+  const raw = document.getElementById('keyInput')?.value || '';
+  const k = raw.trim();
   if (!k) { showToast('INFO','No key entered','Paste your Finnhub key first'); return; }
   persistKey(k);
   const banner = document.getElementById('keyBanner');
@@ -234,11 +235,14 @@ function saveKey() {
 async function fetchFinnhubQuote(sym, token) {
   try {
     const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${token}`);
-    // Distinguish auth failure (bad key) from other errors (rate limit, network)
+    // Only definitive HTTP auth rejections count as a bad key.
+    // 429 rate-limit, network failures, and Finnhub's own d.error body
+    // (which fires for BOTH bad keys AND rate limits) all return null so
+    // they never accidentally trigger a key wipe.
     if (r.status === 401 || r.status === 403) return { _badKey: true };
     if (!r.ok) return null;
     const d = await r.json();
-    if (d?.error) return { _badKey: true };
+    if (d?.error) return null; // could be rate-limit — don't treat as auth failure
     return d.c > 0 ? d : null;
   } catch { return null; }
 }
@@ -283,11 +287,11 @@ async function fetchAllStocks() {
   TSP.usData = US_SYMS.map((s,i) => normalizeStock(s, quotes[i])).filter(Boolean);
 
   if (badKey) {
-    // Definitely an auth error — clear the bad key so user can re-enter
-    localStorage.removeItem('finnhub_key');
-    const session = getSession();
-    if (session) { const u=getUsers(); if(u[session.username]){u[session.username].finnhubKey='';saveUsers(u);} }
-    showToast('INFO','⚠ Invalid API key','Check your Finnhub key in Settings → API Keys');
+    // Definitive HTTP 401/403 — key was rejected by Finnhub
+    // Show the re-entry banner but do NOT auto-delete the key from storage.
+    // The user may have a valid key that's temporarily failing; they can
+    // overwrite it themselves via the banner or Settings page.
+    showToast('INFO','⚠ API key rejected','Re-enter your Finnhub key using the banner below');
     const banner = document.getElementById('keyBanner');
     if (banner) banner.style.display = 'flex';
     needKey('usTable');
@@ -295,7 +299,7 @@ async function fetchAllStocks() {
   }
 
   if (!TSP.usData.length) {
-    // All quotes failed but no auth error — likely rate limited, don't clear the key
+    // All 15 returned null — rate-limited or network issue — key is fine
     showToast('INFO','⚠ US data unavailable','Finnhub rate limited — retrying on next refresh');
     const el = document.getElementById('usTable');
     if (el && !el.querySelector('table')) el.innerHTML = `<div class="loading" style="color:var(--amber)">⚠ Finnhub rate limited — will retry automatically</div>`;
