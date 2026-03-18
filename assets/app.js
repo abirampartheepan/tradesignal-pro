@@ -34,6 +34,7 @@ window.TSP = window.TSP || {
   prevSigs: {},
   pieChart: null,
   portRowId: 0,
+  portfolioCalculated: false,
   filters: { crypto:'all', us:'all', asx:'all' },
 };
 
@@ -173,6 +174,7 @@ async function fetchCrypto() {
     TSP.cryptoData = await r.json();
     if (typeof renderCrypto === 'function') renderCrypto();
     if (typeof updateStats === 'function') updateStats();
+    if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
   } catch(e) {
     const el = document.getElementById('cryptoTable');
     if (el) el.innerHTML = '<div class="loading" style="color:var(--red)">⚠ CoinGecko rate limited — retrying on next refresh</div>';
@@ -254,6 +256,7 @@ async function fetchAllStocks() {
 
   if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
   if (typeof updateAlerts === 'function') updateAlerts();
+  if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
 }
 
 // ── FETCH ASX ────────────────────────────────────────
@@ -371,6 +374,7 @@ async function fetchASXFresh(showErrors) {
     try { sessionStorage.setItem(ASX_CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch {}
     if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
     if (typeof updateAlerts === 'function') updateAlerts();
+    if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
   } else if (showErrors) {
     const el = document.getElementById('asxTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
@@ -521,6 +525,15 @@ function openModal(asset) {
 }
 
 // ── NOTIFICATIONS ────────────────────────────────────
+function saveNotifPref(on) {
+  const session = getSession();
+  if (session) {
+    const users = getUsers();
+    if (users[session.username]) { users[session.username].notifOn = on; saveUsers(users); }
+  }
+  localStorage.setItem('tsp_notif', on ? '1' : '0');
+}
+
 async function toggleNotifications() {
   const btn = document.getElementById('notifBtn');
   if (!TSP.notifOn) {
@@ -528,10 +541,12 @@ async function toggleNotifications() {
     TSP.notifOn = p === 'granted';
     if (btn) { btn.textContent = TSP.notifOn ? '🔔 Alerts On' : '⚠ Denied'; btn.classList.toggle('active', TSP.notifOn); }
     showToast(TSP.notifOn ? 'INFO' : 'INFO', TSP.notifOn ? '✅ Alerts enabled' : '⚠ Permission denied', TSP.notifOn ? 'Push notifications active' : 'Enable in browser settings');
+    saveNotifPref(TSP.notifOn);
   } else {
     TSP.notifOn = false;
     if (btn) { btn.textContent = '🔔 Alerts'; btn.classList.remove('active'); }
     showToast('INFO','Alerts disabled','Push notifications turned off');
+    saveNotifPref(false);
   }
 }
 
@@ -606,7 +621,7 @@ async function doSignup() {
   if (!pass || pass.length < 6) return showAuthMsg('authErr','Password must be at least 6 characters');
   const users = getUsers();
   if (users[user]) return showAuthMsg('authErr','Username already taken — sign in instead');
-  users[user] = { hash: await hashPass(pass), finnhubKey: key || '' };
+  users[user] = { hash: await hashPass(pass), finnhubKey: key || '', notifOn: false };
   saveUsers(users);
   showAuthMsg('authOk','Account created — signing you in…');
   setTimeout(() => loginUser(user, key || ''), 700);
@@ -637,6 +652,16 @@ function loginUser(username, finnhubKey) {
     if (banner) banner.style.display = 'none';
   } else {
     localStorage.removeItem('finnhub_key');
+  }
+
+  // Restore saved notification preference for this user
+  const users = getUsers();
+  const userData = users[username];
+  const savedNotif = userData?.notifOn ?? (localStorage.getItem('tsp_notif') === '1');
+  if (savedNotif && Notification.permission === 'granted') {
+    TSP.notifOn = true;
+    const btn = document.getElementById('notifBtn');
+    if (btn) { btn.textContent = '🔔 Alerts On'; btn.classList.add('active'); }
   }
 
   if (typeof bootDashboard === 'function') bootDashboard();
