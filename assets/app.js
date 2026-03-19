@@ -458,7 +458,7 @@ function fromStooqSym(stooqSym, market) {
 async function stooqBatch(syms, market) {
   if (!syms.length) return [];
   const ss  = syms.map(s => toStooqSym(s, market)).join(',');
-  const url = `https://stooq.com/q/l/?s=${ss}&f=sd2ohlcv&h&e=csv`;
+  const url = `https://stooq.com/q/l/?s=${ss}&f=sd2t2ohlcv&h&e=csv`;
   const enc = encodeURIComponent(url);
   const proxies = [
     `https://api.allorigins.win/raw?url=${enc}`,
@@ -534,8 +534,8 @@ async function fetchUS() {
     }
   } catch {}
   try {
-    const { data, ts } = JSON.parse(localStorage.getItem(US_STORE_KEY) || '{}');
-    if (Date.now() - ts < US_STORE_TTL && data?.length) {
+    const { data } = JSON.parse(localStorage.getItem(US_STORE_KEY) || '{}');
+    if (data?.length) {
       yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
       fetchUSFresh(); fetchUSCustom(); return;
     }
@@ -550,7 +550,7 @@ async function fetchUSFresh(showErrors) {
   const data = await yhFetchAll(US_SYMS, 'us');
   if (data.length) {
     yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
-  } else if (showErrors) {
+  } else if (showErrors && !TSP.usData.length) {
     const el = document.getElementById('usTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
       <div>⚠ US data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
@@ -585,8 +585,8 @@ async function fetchASX() {
     }
   } catch {}
   try {
-    const { data, ts } = JSON.parse(localStorage.getItem(ASX_STORE_KEY) || '{}');
-    if (Date.now() - ts < ASX_STORE_TTL && data?.length) {
+    const { data } = JSON.parse(localStorage.getItem(ASX_STORE_KEY) || '{}');
+    if (data?.length) {
       yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
       fetchASXFresh(); fetchASXCustom(); return;
     }
@@ -614,7 +614,7 @@ async function fetchASXFresh(showErrors) {
   const data = await yhFetchAll(ASX_SYMS, 'asx');
   if (data.length) {
     yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
-  } else if (showErrors) {
+  } else if (showErrors && !TSP.asxData.length) {
     const el = document.getElementById('asxTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
       <div>⚠ ASX data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
