@@ -221,6 +221,97 @@ function chgBadge(v) {
   return `<span class="chg ${cls}">${gs(v)}${f2(v)}%</span>`;
 }
 
+// ── SKELETON LOADER ─────────────────────────────────
+function skeletonRows(n=8) {
+  return '<div class="skeleton-table">' + Array.from({length:n}, () =>
+    `<div class="skeleton-row">
+      <div class="skeleton-cell w20 h20"></div>
+      <div class="skeleton-cell w12"></div>
+      <div class="skeleton-cell w10"></div>
+      <div class="skeleton-cell w15"></div>
+      <div class="skeleton-cell w10"></div>
+      <div class="skeleton-cell w8"></div>
+    </div>`
+  ).join('') + '</div>';
+}
+
+// ── EXPORT CSV ──────────────────────────────────────
+function exportCSV(type) {
+  let data, filename;
+  if (type === 'crypto') {
+    data = TSP.cryptoData;
+    filename = 'tradesignal_crypto.csv';
+    const header = 'Rank,Name,Symbol,Price (USD),Price (AUD),24h %,7d %,Market Cap,Volume 24h,Signal\n';
+    const rows = data.map(c => {
+      const sp = c.sparkline_in_7d?.price || [];
+      const rsi = calcRSI(sp);
+      const sig = getSignal(rsi, c.price_change_percentage_24h, c.price_change_percentage_7d_in_currency);
+      return [c.market_cap_rank, `"${c.name}"`, c.symbol.toUpperCase(),
+        c.current_price, (c.current_price*TSP.audRate).toFixed(2),
+        (c.price_change_percentage_24h||0).toFixed(2),
+        (c.price_change_percentage_7d_in_currency||0).toFixed(2),
+        c.market_cap, c.total_volume, sig.s].join(',');
+    }).join('\n');
+    downloadCSV(header + rows, filename);
+  } else {
+    data = type === 'us' ? TSP.usData : TSP.asxData;
+    filename = `tradesignal_${type}_stocks.csv`;
+    const header = 'Symbol,Company,Price,24h %,52W High,52W Low,RSI,Market Cap,Signal\n';
+    const rows = data.map(s => {
+      const c24 = s.regularMarketChangePercent || 0;
+      const hi = s.fiftyTwoWeekHigh || s.regularMarketPrice, lo = s.fiftyTwoWeekLow || s.regularMarketPrice;
+      const range = hi - lo, pos = range > 0 ? ((s.regularMarketPrice - lo) / range) * 100 : 50;
+      const rsi = cl(pos * 0.7 + (c24 > 0 ? 10 : -10) + 15, 5, 95);
+      const sig = getSignal(rsi, c24, null);
+      return [s.symbol, `"${s.shortName||s.symbol}"`, s.regularMarketPrice,
+        c24.toFixed(2), hi, lo, rsi.toFixed(1), s.marketCap||'', sig.s].join(',');
+    }).join('\n');
+    downloadCSV(header + rows, filename);
+  }
+}
+function downloadCSV(csv, filename) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('INFO', 'Exported', `${filename} downloaded`);
+}
+
+// ── TABLE SORTING ───────────────────────────────────
+window._sortState = {};
+function sortTable(tableId, colIdx, type='string') {
+  const table = document.querySelector(`#${tableId} table`);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const state = window._sortState[tableId] || { col: -1, asc: true };
+  state.asc = state.col === colIdx ? !state.asc : false; // default descending
+  state.col = colIdx;
+  window._sortState[tableId] = state;
+
+  rows.sort((a, b) => {
+    let va = a.cells[colIdx]?.textContent.trim() || '';
+    let vb = b.cells[colIdx]?.textContent.trim() || '';
+    if (type === 'num') {
+      va = parseFloat(va.replace(/[^0-9.\-]/g, '')) || 0;
+      vb = parseFloat(vb.replace(/[^0-9.\-]/g, '')) || 0;
+    }
+    let cmp = type === 'num' ? va - vb : va.localeCompare(vb);
+    return state.asc ? cmp : -cmp;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+  // Update sort arrows
+  table.querySelectorAll('th.sortable').forEach((th, i) => {
+    th.classList.toggle('sorted', i === colIdx || th.dataset.sortIdx == colIdx);
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow && (i === colIdx || th.dataset.sortIdx == colIdx)) arrow.textContent = state.asc ? '▲' : '▼';
+    else if (arrow) arrow.textContent = '▲';
+  });
+}
+
 // ── SPARKLINE SVG ───────────────────────────────────
 function sparklineSVG(prices, width=120, height=32) {
   if (!prices || prices.length < 2) return '<svg width="'+width+'" height="'+height+'"></svg>';
@@ -613,7 +704,7 @@ async function fetchUS() {
     }
   } catch {}
   const el = document.getElementById('usTable');
-  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching US stock data…</div>';
+  if (el) el.innerHTML = '' + skeletonRows(8) + '';
   await fetchUSFresh(true);
   fetchUSCustom();
 }
@@ -651,7 +742,7 @@ async function fetchUSCustom() {
     if (data?.length) { _render(data); fetchUSCustomFresh(syms, cacheKey, storeKey, _render); return; }
   } catch {}
   const el = document.getElementById('usCustomTable');
-  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  if (el) el.innerHTML = '' + skeletonRows(3) + '';
   await fetchUSCustomFresh(syms, cacheKey, storeKey, _render);
 }
 async function fetchUSCustomFresh(syms, cacheKey, storeKey, _render) {
@@ -685,7 +776,7 @@ async function fetchASX() {
     }
   } catch {}
   const el = document.getElementById('asxTable');
-  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching ASX data…</div>';
+  if (el) el.innerHTML = '' + skeletonRows(8) + '';
   await fetchASXFresh(true);
   fetchASXCustom();
 }
@@ -711,7 +802,7 @@ async function fetchASXCustom() {
     if (data?.length) { _render(data); fetchASXCustomFresh(syms, cacheKey, storeKey, _render); return; }
   } catch {}
   const el = document.getElementById('asxCustomTable');
-  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  if (el) el.innerHTML = '' + skeletonRows(3) + '';
   await fetchASXCustomFresh(syms, cacheKey, storeKey, _render);
 }
 async function fetchASXCustomFresh(syms, cacheKey, storeKey, _render) {
@@ -762,15 +853,15 @@ function renderStocks(type, data, elId) {
   if (filter === 'sell') rows = rows.filter(r => r.sig.s === 'SELL');
 
   el.innerHTML = `
-  <table class="data-tbl">
+  <table class="data-tbl" aria-live="polite">
     <thead><tr>
-      <th>Company</th>
-      <th class="r">Price</th>
+      <th class="sortable" data-sort-idx="0" onclick="sortTable('${elId}',0)">Company <span class="sort-arrow">▲</span></th>
+      <th class="r sortable" data-sort-idx="1" onclick="sortTable('${elId}',1,'num')">Price <span class="sort-arrow">▲</span></th>
       ${type==='us' ? '<th class="r">AUD</th>' : ''}
-      <th class="r">24h</th>
+      <th class="r sortable" data-sort-idx="${type==='us'?3:2}" onclick="sortTable('${elId}',${type==='us'?3:2},'num')">24h <span class="sort-arrow">▲</span></th>
       <th>52-Week Range</th>
-      <th>Trend RSI</th>
-      <th class="r">Mkt Cap</th>
+      <th><span class="tooltip-wrap">Trend RSI<span class="tooltip-icon">?</span><span class="tooltip-text">Trend RSI is derived from the stock's position within its 52-week range and daily momentum. Below 35 = oversold (potential BUY), above 65 = overbought (potential SELL).</span></span></th>
+      <th class="r sortable" data-sort-idx="${type==='us'?6:5}" onclick="sortTable('${elId}',${type==='us'?6:5},'num')">Mkt Cap <span class="sort-arrow">▲</span></th>
       <th>Signal</th>
     </tr></thead>
     <tbody>${rows.map(s => {

@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ASX Stocks — TradeSignal Pro</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="TradeSignal Pro — Real-Time Trading Signals">
+  <meta property="og:description" content="Free technical signal analysis for Crypto, US Stocks, and ASX equities. RSI-based BUY/SELL/HOLD signals with AI-powered analysis.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://abirampartheepan.github.io/tradesignal-pro/favicon.svg">
+  <meta name="description" content="Free technical signal analysis for Crypto, US Stocks, and ASX equities. Real-time RSI-based trading signals with AI analysis.">
+  <meta name="theme-color" content="#060b14">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -56,6 +62,7 @@
             <div class="panel-meta">Top 15 ASX stocks · All prices in AUD · Click any row for detailed signal analysis</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-export" onclick="exportCSV('asx')" title="Export to CSV">⤓ Export</button>
             <button class="add-sym-btn" onclick="openAddSymModal('asx')">+ Add Stock</button>
             <div class="tab-group">
               <div class="tab active" onclick="switchTab('asx','all',this)">All</div>
@@ -64,7 +71,7 @@
             </div>
           </div>
         </div>
-        <div id="asxTable">
+        <div id="asxTable" aria-live="polite">
           <div class="loading"><div class="spinner"></div> Fetching ASX data…</div>
         </div>
       </div>

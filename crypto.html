@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cryptocurrency — TradeSignal Pro</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta property="og:title" content="TradeSignal Pro — Real-Time Trading Signals">
+  <meta property="og:description" content="Free technical signal analysis for Crypto, US Stocks, and ASX equities. RSI-based BUY/SELL/HOLD signals with AI-powered analysis.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://abirampartheepan.github.io/tradesignal-pro/favicon.svg">
+  <meta name="description" content="Free technical signal analysis for Crypto, US Stocks, and ASX equities. Real-time RSI-based trading signals with AI analysis.">
+  <meta name="theme-color" content="#060b14">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -56,6 +62,7 @@
             <div class="panel-meta">RSI (14) calculated from 7-day sparkline · Click any row or signal for detailed analysis</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-export" onclick="exportCSV('crypto')" title="Export to CSV">⤓ Export</button>
             <button class="add-sym-btn" onclick="openAddSymModal('crypto')">+ Add Coin</button>
             <div class="tab-group">
               <div class="tab active" onclick="switchTab('crypto','all',this)">All</div>
@@ -64,7 +71,7 @@
             </div>
           </div>
         </div>
-        <div id="cryptoTable">
+        <div id="cryptoTable" aria-live="polite">
           <div class="loading"><div class="spinner"></div> Fetching cryptocurrency data…</div>
         </div>
       </div>
@@ -107,18 +114,18 @@ function renderCrypto() {
   document.getElementById('cryptoSellList').textContent = TSP.cryptoData.filter((_,i)=>allRows[i]?.s==='SELL').slice(0,4).map(c=>c.symbol.toUpperCase()).join(', ')||'None';
 
   document.getElementById('cryptoTable').innerHTML = `
-  <table class="data-tbl">
+  <table class="data-tbl" aria-live="polite">
     <thead><tr>
-      <th>#</th>
-      <th>Asset</th>
-      <th class="r">Price (USD)</th>
+      <th class="sortable" data-sort-idx="0" onclick="sortTable('cryptoTable',0,'num')"># <span class="sort-arrow">▲</span></th>
+      <th class="sortable" data-sort-idx="1" onclick="sortTable('cryptoTable',1)">Asset <span class="sort-arrow">▲</span></th>
+      <th class="r sortable" data-sort-idx="2" onclick="sortTable('cryptoTable',2,'num')">Price (USD) <span class="sort-arrow">▲</span></th>
       <th class="r">Price (AUD)</th>
-      <th class="r">24h</th>
-      <th class="r">7d</th>
+      <th class="r sortable" data-sort-idx="4" onclick="sortTable('cryptoTable',4,'num')">24h <span class="sort-arrow">▲</span></th>
+      <th class="r sortable" data-sort-idx="5" onclick="sortTable('cryptoTable',5,'num')">7d <span class="sort-arrow">▲</span></th>
       <th>7D Chart</th>
-      <th>RSI (14)</th>
-      <th class="r">Market Cap</th>
-      <th class="r">Volume 24h</th>
+      <th><span class="tooltip-wrap">RSI (14)<span class="tooltip-icon">?</span><span class="tooltip-text">RSI (Relative Strength Index) is calculated from the 7-day price sparkline. Below 30 = oversold (potential BUY), above 70 = overbought (potential SELL).</span></span></th>
+      <th class="r sortable" data-sort-idx="8" onclick="sortTable('cryptoTable',8,'num')">Market Cap <span class="sort-arrow">▲</span></th>
+      <th class="r sortable" data-sort-idx="9" onclick="sortTable('cryptoTable',9,'num')">Volume 24h <span class="sort-arrow">▲</span></th>
       <th>Signal</th>
     </tr></thead>
     <tbody>${rows.map(c => {
