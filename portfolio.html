@@ -165,10 +165,14 @@ function buildPortOptions() {
     : '<option disabled>Loading crypto…</option>';
   const usOpts  = US_SYMS.map(s=>`<option value="${s}">${STOCK_NAMES[s]||s} (${s})</option>`).join('');
   const asxOpts = ASX_SYMS.map(s=>`<option value="${s}">${STOCK_NAMES[s]||s} (${s.replace('.AX','')})</option>`).join('');
+  const myUS  = getCustomSyms('us').map(s=>`<option value="${s}">${STOCK_NAMES[s]||s} (${s})</option>`).join('');
+  const myASX = getCustomSyms('asx').map(s=>`<option value="${s}">${STOCK_NAMES[s]||s} (${s.replace('.AX','')})</option>`).join('');
   return `<option value="">Select asset…</option>
-    <optgroup label="── Cryptocurrency (Top 15)">${cryptoOpts}</optgroup>
+    <optgroup label="── Cryptocurrency">${cryptoOpts}</optgroup>
     <optgroup label="── US Stocks (NYSE / NASDAQ)">${usOpts}</optgroup>
+    ${myUS  ? `<optgroup label="── My US Stocks">${myUS}</optgroup>` : ''}
     <optgroup label="── ASX Stocks (Australia)">${asxOpts}</optgroup>
+    ${myASX ? `<optgroup label="── My ASX Stocks">${myASX}</optgroup>` : ''}
     <option value="CUSTOM">✏ Custom / Manual Price</option>`;
 }
 

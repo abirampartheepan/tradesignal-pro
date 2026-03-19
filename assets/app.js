@@ -141,17 +141,30 @@ function confirmAddSym(market, sym, name) {
   addCustomSym(market, sym);
   showToast('INFO', '✅ Added', `${name} added`);
   document.getElementById('addSymModal')?.remove();
-  if (market === 'us')     { try{sessionStorage.removeItem(US_CACHE_KEY);}catch{} fetchUS(); }
-  if (market === 'asx')    { try{sessionStorage.removeItem(ASX_CACHE_KEY);}catch{} fetchASX(); }
+  if (market === 'us')     fetchUSCustom();
+  if (market === 'asx')    fetchASXCustom();
   if (market === 'crypto') fetchCustomCrypto();
 }
 
 function removeAndRefresh(market, sym) {
   removeCustomSym(market, sym);
   document.getElementById('addSymModal')?.remove();
-  if (market === 'us')  { TSP.usData  = TSP.usData.filter(s => s.symbol !== sym);  if(typeof renderStocks==='function') renderStocks('us', TSP.usData, 'usTable'); }
-  if (market === 'asx') { TSP.asxData = TSP.asxData.filter(s => s.symbol !== sym); if(typeof renderStocks==='function') renderStocks('asx', TSP.asxData, 'asxTable'); }
-  if (market === 'crypto') { TSP.cryptoData = TSP.cryptoData.filter(c => c.id !== sym); if(typeof renderCrypto==='function') renderCrypto(); }
+  if (market === 'us') {
+    TSP.usCustomData = TSP.usCustomData.filter(s => s.symbol !== sym);
+    if (typeof renderStocks === 'function') renderStocks('us', TSP.usCustomData, 'usCustomTable');
+    const panel = document.getElementById('usCustomPanel');
+    if (panel && !TSP.usCustomData.length) panel.style.display = 'none';
+  }
+  if (market === 'asx') {
+    TSP.asxCustomData = TSP.asxCustomData.filter(s => s.symbol !== sym);
+    if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxCustomData, 'asxCustomTable');
+    const panel = document.getElementById('asxCustomPanel');
+    if (panel && !TSP.asxCustomData.length) panel.style.display = 'none';
+  }
+  if (market === 'crypto') {
+    TSP.cryptoData = TSP.cryptoData.filter(c => c.id !== sym);
+    if (typeof renderCrypto === 'function') renderCrypto();
+  }
   showToast('INFO', 'Removed', `${sym} removed`);
 }
 
@@ -160,6 +173,8 @@ window.TSP = window.TSP || {
   cryptoData: [],
   usData: [],
   asxData: [],
+  usCustomData: [],
+  asxCustomData: [],
   audRate: AUD_FALLBACK,
   notifOn: false,
   countdown: REFRESH_SEC,
@@ -515,23 +530,24 @@ async function fetchUS() {
     const { data, ts } = JSON.parse(sessionStorage.getItem(US_CACHE_KEY) || '{}');
     if (Date.now() - ts < US_CACHE_TTL && data?.length) {
       yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
-      fetchUSFresh(); return;
+      fetchUSFresh(); fetchUSCustom(); return;
     }
   } catch {}
   try {
     const { data, ts } = JSON.parse(localStorage.getItem(US_STORE_KEY) || '{}');
     if (Date.now() - ts < US_STORE_TTL && data?.length) {
       yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
-      fetchUSFresh(); return;
+      fetchUSFresh(); fetchUSCustom(); return;
     }
   } catch {}
   const el = document.getElementById('usTable');
   if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching US stock data…</div>';
   await fetchUSFresh(true);
+  fetchUSCustom();
 }
 
 async function fetchUSFresh(showErrors) {
-  const data = await yhFetchAll([...US_SYMS, ...getCustomSyms('us')], 'us');
+  const data = await yhFetchAll(US_SYMS, 'us');
   if (data.length) {
     yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
   } else if (showErrors) {
@@ -539,6 +555,19 @@ async function fetchUSFresh(showErrors) {
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
       <div>⚠ US data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
   }
+}
+
+async function fetchUSCustom() {
+  const syms = getCustomSyms('us');
+  const panel = document.getElementById('usCustomPanel');
+  if (!syms.length) { if (panel) panel.style.display = 'none'; return; }
+  if (panel) panel.style.display = '';
+  const el = document.getElementById('usCustomTable');
+  if (el && !TSP.usCustomData.length) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  const data = await yhFetchAll(syms, 'us');
+  TSP.usCustomData = data;
+  if (panel) panel.style.display = data.length ? '' : 'none';
+  if (data.length && typeof renderStocks === 'function') renderStocks('us', data, 'usCustomTable');
 }
 
 const fetchAllStocks = fetchUS; // alias for all pages that call fetchAllStocks
@@ -552,23 +581,37 @@ async function fetchASX() {
     const { data, ts } = JSON.parse(sessionStorage.getItem(ASX_CACHE_KEY) || '{}');
     if (Date.now() - ts < ASX_CACHE_TTL && data?.length) {
       yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
-      fetchASXFresh(); return;
+      fetchASXFresh(); fetchASXCustom(); return;
     }
   } catch {}
   try {
     const { data, ts } = JSON.parse(localStorage.getItem(ASX_STORE_KEY) || '{}');
     if (Date.now() - ts < ASX_STORE_TTL && data?.length) {
       yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
-      fetchASXFresh(); return;
+      fetchASXFresh(); fetchASXCustom(); return;
     }
   } catch {}
   const el = document.getElementById('asxTable');
   if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching ASX data…</div>';
   await fetchASXFresh(true);
+  fetchASXCustom();
+}
+
+async function fetchASXCustom() {
+  const syms = getCustomSyms('asx');
+  const panel = document.getElementById('asxCustomPanel');
+  if (!syms.length) { if (panel) panel.style.display = 'none'; return; }
+  if (panel) panel.style.display = '';
+  const el = document.getElementById('asxCustomTable');
+  if (el && !TSP.asxCustomData.length) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  const data = await yhFetchAll(syms, 'asx');
+  TSP.asxCustomData = data;
+  if (panel) panel.style.display = data.length ? '' : 'none';
+  if (data.length && typeof renderStocks === 'function') renderStocks('asx', data, 'asxCustomTable');
 }
 
 async function fetchASXFresh(showErrors) {
-  const data = await yhFetchAll([...ASX_SYMS, ...getCustomSyms('asx')], 'asx');
+  const data = await yhFetchAll(ASX_SYMS, 'asx');
   if (data.length) {
     yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
   } else if (showErrors) {
@@ -580,11 +623,10 @@ async function fetchASXFresh(showErrors) {
 
 // ── RENDER STOCKS (shared between pages) ─────────────
 function renderStocks(type, data, elId) {
-  const el = document.getElementById(elId);
-  if (!el || !data.length) return;
+  if (!data.length) return;
 
-  const filter = TSP.filters[type];
-  let rows = data.map(s => {
+  // Compute all rows first (needed for detectChanges even if no table on this page)
+  const allRows = data.map(s => {
     const c24 = s.regularMarketChangePercent || 0;
     const hi = s.fiftyTwoWeekHigh || s.regularMarketPrice;
     const lo = s.fiftyTwoWeekLow  || s.regularMarketPrice;
@@ -596,7 +638,13 @@ function renderStocks(type, data, elId) {
     const audP = type === 'us' ? pr * TSP.audRate : pr;
     return { ...s, c24, rsi, sig, audP };
   });
+  detectChanges(allRows, type); // always run — works on signal history page too
 
+  const el = document.getElementById(elId);
+  if (!el) return;
+
+  const filter = TSP.filters[type];
+  let rows = allRows;
   if (filter === 'buy')  rows = rows.filter(r => r.sig.s === 'BUY');
   if (filter === 'sell') rows = rows.filter(r => r.sig.s === 'SELL');
 
@@ -653,7 +701,6 @@ function renderStocks(type, data, elId) {
       </tr>`;
     }).join('')}</tbody>
   </table>`;
-  detectChanges(rows, type);
 }
 
 // ── SIGNAL ANALYSIS MODAL ───────────────────────────
