@@ -519,6 +519,59 @@ function normaliseStock(sym, d) {
   };
 }
 
+// ── STOCK SPARKLINE (7-day price history) ──────────
+// Fetches 7-day daily close prices via Yahoo v8/chart for sparkline SVGs
+// Cached in localStorage per symbol to avoid repeat fetches
+const SPARK_CACHE_KEY = 'tsp_sparklines';
+const SPARK_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+function getSparkCache() {
+  try { return JSON.parse(localStorage.getItem(SPARK_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+
+async function fetchSparkline(sym) {
+  const cache = getSparkCache();
+  if (cache[sym] && Date.now() - cache[sym].ts < SPARK_CACHE_TTL) return cache[sym].prices;
+
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=7d`;
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  ];
+  const attempt = async p => {
+    const r = await fetch(p, { signal: mkTimeout(8000) });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const closes = d?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+    if (!closes?.length) throw new Error('no data');
+    return closes.filter(c => c != null && c > 0);
+  };
+  try {
+    const prices = await Promise.any(proxies.map(attempt));
+    if (prices.length >= 2) {
+      cache[sym] = { prices, ts: Date.now() };
+      try { localStorage.setItem(SPARK_CACHE_KEY, JSON.stringify(cache)); } catch {}
+    }
+    return prices;
+  } catch { return cache[sym]?.prices || []; }
+}
+
+// Fetch sparklines for all symbols in parallel (non-blocking, updates table after)
+async function fetchAndRenderSparklines(syms, elId) {
+  const results = await Promise.all(syms.map(async sym => {
+    const prices = await fetchSparkline(sym);
+    return { sym, prices };
+  }));
+  // Update sparkline cells in the table
+  const el = document.getElementById(elId);
+  if (!el) return;
+  results.forEach(({ sym, prices }) => {
+    const cell = el.querySelector(`[data-spark="${sym}"]`);
+    if (cell && prices.length >= 2) cell.innerHTML = sparklineSVG(prices);
+  });
+}
+
 // ── FMP (PRIMARY — US stocks only on free tier) ────
 async function fmpSingle(sym) {
   if (!FMP_KEY) return null;
@@ -909,9 +962,10 @@ function renderStocks(type, data, elId) {
       <th class="r sortable" data-sort-idx="1" onclick="sortTable('${elId}',1,'num')">Price <span class="sort-arrow">▲</span></th>
       ${type==='us' ? '<th class="r">AUD</th>' : ''}
       <th class="r sortable" data-sort-idx="${type==='us'?3:2}" onclick="sortTable('${elId}',${type==='us'?3:2},'num')">24h <span class="sort-arrow">▲</span></th>
+      <th>7D Chart</th>
       <th>52-Week Range</th>
       <th><span class="tooltip-wrap">Trend RSI<span class="tooltip-icon">?</span><span class="tooltip-text">Trend RSI is derived from the stock's position within its 52-week range and daily momentum. Below 35 = oversold (potential BUY), above 65 = overbought (potential SELL).</span></span></th>
-      <th class="r sortable" data-sort-idx="${type==='us'?6:5}" onclick="sortTable('${elId}',${type==='us'?6:5},'num')">Mkt Cap <span class="sort-arrow">▲</span></th>
+      <th class="r sortable" data-sort-idx="${type==='us'?7:6}" onclick="sortTable('${elId}',${type==='us'?7:6},'num')">Mkt Cap <span class="sort-arrow">▲</span></th>
       <th>Signal</th>
     </tr></thead>
     <tbody>${rows.map(s => {
@@ -935,6 +989,7 @@ function renderStocks(type, data, elId) {
         <td class="r mono">$${fPrice(s.regularMarketPrice)}</td>
         ${type==='us' ? `<td class="r mono" style="color:var(--text2)">A$${fPrice(s.audP)}</td>` : ''}
         <td class="r">${chgBadge(s.c24)}</td>
+        <td data-spark="${s.symbol}"><div style="width:120px;height:32px;background:var(--s2);border-radius:3px"></div></td>
         <td>
           <div style="font-size:10px;color:var(--text3)">${rangePct}% of annual range</div>
           <div style="font-size:10px;color:var(--text3)">$${fPrice(s.fiftyTwoWeekLow)} – $${fPrice(s.fiftyTwoWeekHigh)}</div>
@@ -955,6 +1010,9 @@ function renderStocks(type, data, elId) {
       </tr>`;
     }).join('')}</tbody>
   </table>`;
+
+  // Fetch 7-day sparklines in background (non-blocking, cached per symbol)
+  fetchAndRenderSparklines(rows.map(s => s.symbol), elId);
 }
 
 // ── SIGNAL ANALYSIS MODAL ───────────────────────────
