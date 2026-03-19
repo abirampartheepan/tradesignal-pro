@@ -14,7 +14,7 @@ const FMP_KEY = 'ZQD2SdTNsOBRTLuNlq5EU9BDpZteY3bm';
 
 // RapidAPI Yahoo Finance — for ASX stocks (free tier: 500 requests/month)
 // Get your free key at: https://rapidapi.com/sparior/api/yahoo-finance15
-const RAPIDAPI_KEY = '';
+const RAPIDAPI_KEY = '5b0126e621msh3213cf096211f69p13ae60jsnee7306bfcf41';
 const RAPIDAPI_HOST = 'yahoo-finance15.p.rapidapi.com';
 
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
