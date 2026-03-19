@@ -8,6 +8,10 @@
 const REFRESH_SEC   = 60;
 const AUD_FALLBACK  = 1.57;
 
+// FMP (Financial Modeling Prep) — free tier, 250 requests/day
+// Get your free key at: https://site.financialmodelingprep.com/ (no credit card needed)
+const FMP_KEY = '';
+
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
 const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
 
@@ -121,7 +125,7 @@ async function searchAddSym(market) {
   }
 
   const sym = (market === 'asx' && !raw.toUpperCase().includes('.')) ? raw.toUpperCase() + '.AX' : raw.toUpperCase();
-  const data = await yhSingle(sym);
+  const data = await lookupSingleStock(sym);
   if (!data) {
     res.innerHTML = `<div style="color:var(--red);font-size:12px">Symbol not found. ${market === 'asx' ? 'Use format: MIN.AX' : 'Check the ticker is correct.'}</div>`;
     return;
@@ -386,15 +390,15 @@ async function fetchCustomCrypto() {
   } catch {}
 }
 
-// ── YAHOO FINANCE SHARED FETCH LAYER ────────────────
-// Covers both US and ASX — no API key needed.
-// Strategy per market:
-//   1. Show cached data instantly (sessionStorage 5 min, localStorage 30 min)
-//   2. Batch v7/quote for all 15 symbols — races 6 proxies in parallel
-//   3. Gap-fill: any symbol missing from batch gets its own v7/quote then v8/chart attempt
+// ── STOCK DATA FETCH LAYER ──────────────────────────
+// Primary: FMP (Financial Modeling Prep) — direct CORS, no proxy needed
+// Fallback: Yahoo Finance via CORS proxies + Stooq CSV
+// Strategy:
+//   1. Show cached data instantly (sessionStorage 5 min, localStorage forever)
+//   2. FMP batch for all symbols — direct fetch, fast and reliable
+//   3. If FMP fails or no key: Yahoo batch → individual gap-fill → Stooq CSV
 //   4. Save whatever we get to both caches
 
-// Abort signal with fallback for older Safari
 function mkTimeout(ms) {
   try { return AbortSignal.timeout(ms); } catch {
     const c = new AbortController();
@@ -403,7 +407,47 @@ function mkTimeout(ms) {
   }
 }
 
-// Build proxy URLs for a Yahoo Finance endpoint — maximise chances with many services
+// Normalise into our internal shape (works for FMP, Yahoo, or Stooq data)
+function normaliseStock(sym, d) {
+  const p = d.price || d.regularMarketPrice;
+  if (!p || p <= 0) return null;
+  return {
+    symbol:                    sym,
+    shortName:                 STOCK_NAMES[sym] || d.name || d.shortName || sym,
+    regularMarketPrice:        p,
+    regularMarketChangePercent: d.changesPercentage ?? d.regularMarketChangePercent ?? 0,
+    fiftyTwoWeekHigh:          d.yearHigh  || d.fiftyTwoWeekHigh || p * 1.2,
+    fiftyTwoWeekLow:           d.yearLow   || d.fiftyTwoWeekLow  || p * 0.8,
+    marketCap:                 d.marketCap || null,
+    regularMarketVolume:       d.volume    || d.regularMarketVolume || null,
+  };
+}
+
+// ── FMP (PRIMARY) ──────────────────────────────────
+async function fmpBatch(syms) {
+  if (!FMP_KEY) return [];
+  const url = `https://financialmodelingprep.com/api/v3/quote/${syms.join(',')}?apikey=${FMP_KEY}`;
+  try {
+    const r = await fetch(url, { signal: mkTimeout(15000) });
+    if (!r.ok) throw new Error(r.status);
+    const arr = await r.json();
+    if (!Array.isArray(arr) || !arr.length) return [];
+    return arr.map(s => normaliseStock(s.symbol, s)).filter(Boolean);
+  } catch { return []; }
+}
+
+async function fmpSingle(sym) {
+  if (!FMP_KEY) return null;
+  try {
+    const r = await fetch(`https://financialmodelingprep.com/api/v3/quote/${sym}?apikey=${FMP_KEY}`, { signal: mkTimeout(12000) });
+    if (!r.ok) return null;
+    const arr = await r.json();
+    if (!arr?.[0]?.price) return null;
+    return normaliseStock(sym, arr[0]);
+  } catch { return null; }
+}
+
+// ── YAHOO FINANCE (FALLBACK) ───────────────────────
 function yhProxies(url) {
   const u2 = url.replace('query1.finance', 'query2.finance');
   return [url, u2].flatMap(u => {
@@ -412,50 +456,29 @@ function yhProxies(url) {
       `https://api.allorigins.win/raw?url=${e}`,
       `https://corsproxy.io/?${e}`,
       `https://api.codetabs.com/v1/proxy?quest=${e}`,
-      `https://api.allorigins.win/get?url=${e}`,
       `https://corsproxy.org/?${e}`,
     ];
   });
 }
-// allorigins /get returns JSON wrapper — helper to handle both raw and wrapped responses
 function proxyParse(proxy, response) {
   if (proxy.includes('allorigins.win/get')) return response.json().then(j => JSON.parse(j.contents));
   return response.json();
 }
 
-// Normalise any Yahoo Finance quote object into our internal shape
-function normaliseYH(sym, d) {
-  if (!d?.regularMarketPrice) return null;
-  const p = d.regularMarketPrice;
-  return {
-    symbol:                    sym,
-    shortName:                 STOCK_NAMES[sym] || d.shortName || sym,
-    regularMarketPrice:        p,
-    regularMarketChangePercent: d.regularMarketChangePercent || 0,
-    fiftyTwoWeekHigh:          d.fiftyTwoWeekHigh || p * 1.2,
-    fiftyTwoWeekLow:           d.fiftyTwoWeekLow  || p * 0.8,
-    marketCap:                 d.marketCap || null,
-    regularMarketVolume:       d.regularMarketVolume || null,
-  };
-}
-
-// Batch v7/quote — one request for all syms, races proxies, returns array (possibly partial)
 async function yhBatch(syms) {
   const fields = 'regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName';
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms.join(',')}&fields=${fields}`;
-  const proxies = yhProxies(url);
   const attempt = async p => {
     const r = await fetch(p, { signal: mkTimeout(15000) });
     if (!r.ok) throw new Error(r.status);
     const d = await proxyParse(p, r);
     const res = d?.quoteResponse?.result;
     if (!res?.length) throw new Error('empty');
-    return res.map(s => normaliseYH(s.symbol, s)).filter(Boolean);
+    return res.map(s => normaliseStock(s.symbol, { ...s, price: s.regularMarketPrice })).filter(Boolean);
   };
-  try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
+  try { return await Promise.any(yhProxies(url).map(attempt)); } catch { return []; }
 }
 
-// Single symbol — tries v7/quote then v8/chart, many proxies each
 async function yhSingle(sym) {
   const url7 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${sym}`;
   const attempt7 = async p => {
@@ -464,32 +487,12 @@ async function yhSingle(sym) {
     const d = await proxyParse(p, r);
     const s = d?.quoteResponse?.result?.[0];
     if (!(s?.regularMarketPrice > 0)) throw new Error('no price');
-    return normaliseYH(sym, s);
+    return normaliseStock(sym, { ...s, price: s.regularMarketPrice });
   };
-  try { return await Promise.any(yhProxies(url7).map(attempt7)); } catch {}
-
-  // v8/chart fallback
-  const url8 = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
-  const attempt8 = async p => {
-    const r = await fetch(p, { signal: mkTimeout(12000) });
-    if (!r.ok) throw new Error(r.status);
-    const d = await proxyParse(p, r);
-    const meta = d?.chart?.result?.[0]?.meta;
-    if (!(meta?.regularMarketPrice > 0)) throw new Error('no price');
-    const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
-    return normaliseYH(sym, {
-      regularMarketPrice:        meta.regularMarketPrice,
-      regularMarketChangePercent: meta.regularMarketChangePercent ||
-                                  ((meta.regularMarketPrice - prev) / prev * 100),
-      fiftyTwoWeekHigh:    meta.fiftyTwoWeekHigh,
-      fiftyTwoWeekLow:     meta.fiftyTwoWeekLow,
-      regularMarketVolume: meta.regularMarketVolume,
-    });
-  };
-  try { return await Promise.any(yhProxies(url8).map(attempt8)); } catch { return null; }
+  try { return await Promise.any(yhProxies(url7).map(attempt7)); } catch { return null; }
 }
 
-// Stooq CSV — completely different server, works when Yahoo proxies are blocked
+// ── STOOQ CSV (FALLBACK) ───────────────────────────
 function toStooqSym(sym, market) {
   if (market === 'us')  return sym.toLowerCase() + '.us';
   if (market === 'asx') return sym.toLowerCase().replace('.ax', '.au');
@@ -525,50 +528,56 @@ async function stooqBatch(syms, market) {
       const price = parseFloat(close), openP = parseFloat(open);
       if (!price || price <= 0 || isNaN(price) || close.trim() === 'N/A') return null;
       const origSym = fromStooqSym(rawSym, market);
-      return normaliseYH(origSym, {
-        regularMarketPrice:         price,
-        regularMarketChangePercent: openP > 0 ? (price - openP) / openP * 100 : 0,
-        fiftyTwoWeekHigh: null,
-        fiftyTwoWeekLow:  null,
-        regularMarketVolume: parseInt(vol) || null,
+      return normaliseStock(origSym, {
+        price, regularMarketChangePercent: openP > 0 ? (price - openP) / openP * 100 : 0,
+        fiftyTwoWeekHigh: null, fiftyTwoWeekLow: null,
+        volume: parseInt(vol) || null,
       });
     }).filter(Boolean);
   };
   try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
 }
 
-// Fetch all syms: batch → individual gap-fill → Stooq fallback → retry once if <60% filled
-async function yhFetchAll(syms, market) {
-  let data = await _yhFetchOnce(syms, market);
-  // If we got less than 60% of symbols, wait 3s and retry the missing ones
-  if (data.length < syms.length * 0.6 && syms.length > 3) {
-    const got = new Set(data.map(s => s.symbol));
-    const retry = syms.filter(s => !got.has(s));
-    if (retry.length) {
-      await new Promise(r => setTimeout(r, 3000));
-      const extra = await _yhFetchOnce(retry, market);
-      data = [...data, ...extra];
-    }
-  }
-  return data;
-}
-async function _yhFetchOnce(syms, market) {
-  let data = await yhBatch(syms);
+// ── UNIFIED FETCH: FMP → Yahoo → Stooq ────────────
+async function fetchStockData(syms, market) {
+  // 1. Try FMP first (direct, fast, reliable)
+  let data = await fmpBatch(syms);
+  if (data.length >= syms.length * 0.8) return data;
+
+  // 2. Gap-fill with Yahoo for anything FMP missed
   const got1 = new Set(data.map(s => s.symbol));
   const missing1 = syms.filter(s => !got1.has(s));
   if (missing1.length) {
-    const fills = await Promise.all(missing1.map(s => yhSingle(s)));
+    const yhData = await yhBatch(missing1);
+    data = [...data, ...yhData];
+  }
+
+  // 3. Individual Yahoo fetch for still-missing symbols
+  const got2 = new Set(data.map(s => s.symbol));
+  const missing2 = syms.filter(s => !got2.has(s));
+  if (missing2.length) {
+    const fills = await Promise.all(missing2.map(s => fmpSingle(s) || yhSingle(s)));
     data = [...data, ...fills.filter(Boolean)];
   }
+
+  // 4. Stooq CSV as final fallback
   if (market) {
-    const got2 = new Set(data.map(s => s.symbol));
-    const missing2 = syms.filter(s => !got2.has(s));
-    if (missing2.length) {
-      const stooq = await stooqBatch(missing2, market);
+    const got3 = new Set(data.map(s => s.symbol));
+    const missing3 = syms.filter(s => !got3.has(s));
+    if (missing3.length) {
+      const stooq = await stooqBatch(missing3, market);
       data = [...data, ...stooq];
     }
   }
+
   return data;
+}
+
+// Single stock lookup (for "Add Stock" search) — tries FMP then Yahoo
+async function lookupSingleStock(sym) {
+  const fmp = await fmpSingle(sym);
+  if (fmp) return fmp;
+  return await yhSingle(sym);
 }
 
 // Helper: save to both caches and render
@@ -608,13 +617,13 @@ async function fetchUS() {
 }
 
 async function fetchUSFresh(showErrors) {
-  const data = await yhFetchAll(US_SYMS, 'us');
+  const data = await fetchStockData(US_SYMS, 'us');
   if (data.length) {
     yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
   } else if (showErrors && !TSP.usData.length) {
     const el = document.getElementById('usTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
-      <div>⚠ US data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
+      <div>⚠ US data unavailable — data sources unavailable. Will retry on next refresh.</div></div>`;
   }
 }
 
@@ -644,7 +653,7 @@ async function fetchUSCustom() {
   await fetchUSCustomFresh(syms, cacheKey, storeKey, _render);
 }
 async function fetchUSCustomFresh(syms, cacheKey, storeKey, _render) {
-  const data = await yhFetchAll(syms, 'us');
+  const data = await fetchStockData(syms, 'us');
   if (!data.length) return;
   const payload = JSON.stringify({ data, ts: Date.now() });
   try { sessionStorage.setItem(cacheKey, payload); } catch {}
@@ -704,7 +713,7 @@ async function fetchASXCustom() {
   await fetchASXCustomFresh(syms, cacheKey, storeKey, _render);
 }
 async function fetchASXCustomFresh(syms, cacheKey, storeKey, _render) {
-  const data = await yhFetchAll(syms, 'asx');
+  const data = await fetchStockData(syms, 'asx');
   if (!data.length) return;
   const payload = JSON.stringify({ data, ts: Date.now() });
   try { sessionStorage.setItem(cacheKey, payload); } catch {}
@@ -713,13 +722,13 @@ async function fetchASXCustomFresh(syms, cacheKey, storeKey, _render) {
 }
 
 async function fetchASXFresh(showErrors) {
-  const data = await yhFetchAll(ASX_SYMS, 'asx');
+  const data = await fetchStockData(ASX_SYMS, 'asx');
   if (data.length) {
     yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
   } else if (showErrors && !TSP.asxData.length) {
     const el = document.getElementById('asxTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
-      <div>⚠ ASX data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
+      <div>⚠ ASX data unavailable — data sources unavailable. Will retry on next refresh.</div></div>`;
   }
 }
 
