@@ -208,176 +208,13 @@ async function fetchCrypto() {
   }
 }
 
-// ── FETCH US STOCKS (Yahoo Finance — no API key needed) ─
-// Strategy: 1) Show cache instantly  2) Batch request (1 call for all 15)
-//           3) Parallel individual fallback  4) Save result to cache
-
-const US_CACHE_KEY  = 'tsp_us_cache';
-const US_CACHE_TTL  = 5  * 60 * 1000; // 5 min — sessionStorage (current tab)
-const US_STORE_KEY  = 'tsp_us_store';
-const US_STORE_TTL  = 30 * 60 * 1000; // 30 min — localStorage (cross-tab/page)
-
-
-function normaliseUSStock(sym, data) {
-  if (!data || !data.regularMarketPrice) return null;
-  return {
-    symbol: sym,
-    shortName: STOCK_NAMES[sym] || sym,
-    regularMarketPrice: data.regularMarketPrice || 0,
-    regularMarketChangePercent: data.regularMarketChangePercent || 0,
-    fiftyTwoWeekHigh: data.fiftyTwoWeekHigh || data.regularMarketPrice * 1.2,
-    fiftyTwoWeekLow:  data.fiftyTwoWeekLow  || data.regularMarketPrice * 0.8,
-    marketCap: data.marketCap || null,
-    regularMarketVolume: data.regularMarketVolume || null,
-  };
-}
-
-// Batch request — races all proxies in parallel (fastest wins)
-async function fetchUSBatch() {
-  const syms   = US_SYMS.join(',');
-  const fields = 'regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName';
-  const base   = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=${fields}`;
-  const base2  = base.replace('query1', 'query2');
-
-  const attempt = async (proxyUrl) => {
-    const r = await fetch(proxyUrl, { signal: mkTimeout(7000) });
-    if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
-    const results = d?.quoteResponse?.result;
-    if (!results?.length) throw new Error('empty');
-    return results.map(s => normaliseUSStock(s.symbol, s)).filter(Boolean);
-  };
-
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base2)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base2)}`,
-  ];
-
-  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
-}
-
-// Individual chart fetch per symbol — fallback if batch fails
-async function fetchUSSingle(sym) {
-  const base  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
-  const base2 = base.replace('query1', 'query2');
-
-  const attempt = async (proxyUrl) => {
-    const r = await fetch(proxyUrl, { signal: mkTimeout(6000) });
-    if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
-    const meta = d?.chart?.result?.[0]?.meta;
-    if (!(meta?.regularMarketPrice > 0)) throw new Error('no price');
-    const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
-    return normaliseUSStock(sym, {
-      regularMarketPrice: meta.regularMarketPrice,
-      regularMarketChangePercent: meta.regularMarketChangePercent || ((meta.regularMarketPrice - prev) / prev * 100),
-      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
-      fiftyTwoWeekLow:  meta.fiftyTwoWeekLow,
-      regularMarketVolume: meta.regularMarketVolume,
-    });
-  };
-
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base2)}`,
-  ];
-
-  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
-}
-
-async function fetchUS() {
-  const el = document.getElementById('usTable');
-
-  // 1. Try sessionStorage cache first (fastest — same tab)
-  try {
-    const raw = sessionStorage.getItem(US_CACHE_KEY);
-    if (raw) {
-      const { data, ts } = JSON.parse(raw);
-      if (Date.now() - ts < US_CACHE_TTL && data?.length) {
-        TSP.usData = data;
-        if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
-        if (typeof updateAlerts === 'function') updateAlerts();
-        fetchUSFresh(false); // silent background refresh
-        return;
-      }
-    }
-  } catch {}
-
-  // 2. Try localStorage stale cache (cross-tab — instant display while fetching fresh)
-  try {
-    const raw = localStorage.getItem(US_STORE_KEY);
-    if (raw) {
-      const { data, ts } = JSON.parse(raw);
-      if (Date.now() - ts < US_STORE_TTL && data?.length) {
-        TSP.usData = data;
-        if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
-        if (typeof updateAlerts === 'function') updateAlerts();
-        fetchUSFresh(false); // silent background refresh
-        return;
-      }
-    }
-  } catch {}
-
-  // 3. No cache at all — show spinner and fetch
-  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching US stock data…</div>';
-  await fetchUSFresh(true);
-}
-
-async function fetchUSFresh(showErrors) {
-  // Try batch first (1 request for all 15 symbols)
-  let data = await fetchUSBatch();
-
-  // Batch failed — try all 15 in full parallel
-  if (!data?.length) {
-    const results = await Promise.all(US_SYMS.map(sym => fetchUSSingle(sym)));
-    data = results.filter(Boolean);
-  }
-
-  if (data?.length) {
-    TSP.usData = data;
-    const payload = JSON.stringify({ data, ts: Date.now() });
-    try { sessionStorage.setItem(US_CACHE_KEY, payload); } catch {}
-    try { localStorage.setItem(US_STORE_KEY, payload); } catch {}
-    if (typeof renderStocks === 'function') renderStocks('us', TSP.usData, 'usTable');
-    if (typeof updateAlerts === 'function') updateAlerts();
-    if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
-  } else if (showErrors) {
-    const el = document.getElementById('usTable');
-    if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
-      <div>⚠ US stock data unavailable — proxies rate limited</div>
-      <div style="font-size:11px;color:var(--text3)">Will retry on next refresh</div>
-    </div>`;
-  }
-}
-
-// Alias so all existing pages (portfolio, watchlist, signals, index) keep working
-const fetchAllStocks = fetchUS;
-
-// ── FETCH ASX ────────────────────────────────────────
-// Strategy: 1) Show cache instantly  2) Batch request (1 call for all 15)
-//           3) Parallel individual fallback  4) Save result to cache
-
-const ASX_CACHE_KEY  = 'tsp_asx_cache';
-const ASX_CACHE_TTL  = 5  * 60 * 1000; // 5 min — sessionStorage (current tab)
-const ASX_STORE_KEY  = 'tsp_asx_store';
-const ASX_STORE_TTL  = 30 * 60 * 1000; // 30 min — localStorage (cross-tab/page)
-
-function normaliseASXStock(sym, data) {
-  if (!data || !data.regularMarketPrice) return null;
-  return {
-    symbol: sym,
-    shortName: STOCK_NAMES[sym] || sym,
-    regularMarketPrice: data.regularMarketPrice || 0,
-    regularMarketChangePercent: data.regularMarketChangePercent || 0,
-    fiftyTwoWeekHigh: data.fiftyTwoWeekHigh || data.regularMarketPrice * 1.2,
-    fiftyTwoWeekLow:  data.fiftyTwoWeekLow  || data.regularMarketPrice * 0.8,
-    marketCap: data.marketCap || null,
-    regularMarketVolume: data.regularMarketVolume || null,
-  };
-}
+// ── YAHOO FINANCE SHARED FETCH LAYER ────────────────
+// Covers both US and ASX — no API key needed.
+// Strategy per market:
+//   1. Show cached data instantly (sessionStorage 5 min, localStorage 30 min)
+//   2. Batch v7/quote for all 15 symbols — races 6 proxies in parallel
+//   3. Gap-fill: any symbol missing from batch gets its own v7/quote then v8/chart attempt
+//   4. Save whatever we get to both caches
 
 // Abort signal with fallback for older Safari
 function mkTimeout(ms) {
@@ -388,124 +225,177 @@ function mkTimeout(ms) {
   }
 }
 
-// Try one batch request for all symbols — races all proxies in parallel
-async function fetchASXBatch() {
-  const syms = ASX_SYMS.join(',');
-  const fields = 'regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName';
-  const base  = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms}&fields=${fields}`;
-  const base2 = base.replace('query1','query2');
-
-  const attempt = async (proxyUrl) => {
-    const r = await fetch(proxyUrl, { signal: mkTimeout(7000) });
-    if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
-    const results = d?.quoteResponse?.result;
-    if (!results?.length) throw new Error('empty');
-    return results.map(s => normaliseASXStock(s.symbol, s)).filter(Boolean);
-  };
-
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base2)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base2)}`,
-  ];
-
-  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
+// Build 6 proxy URLs for a Yahoo Finance endpoint (query1 + query2 × 3 services)
+function yhProxies(url) {
+  const u2 = url.replace('query1.finance', 'query2.finance');
+  return [url, u2].flatMap(u => {
+    const e = encodeURIComponent(u);
+    return [
+      `https://api.allorigins.win/raw?url=${e}`,
+      `https://corsproxy.io/?${e}`,
+      `https://api.codetabs.com/v1/proxy?quest=${e}`,
+    ];
+  });
 }
 
-// Individual chart fetch per symbol — races all proxies in parallel
-async function fetchASXSingle(sym) {
-  const base  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
-  const base2 = base.replace('query1','query2');
+// Normalise any Yahoo Finance quote object into our internal shape
+function normaliseYH(sym, d) {
+  if (!d?.regularMarketPrice) return null;
+  const p = d.regularMarketPrice;
+  return {
+    symbol:                    sym,
+    shortName:                 STOCK_NAMES[sym] || d.shortName || sym,
+    regularMarketPrice:        p,
+    regularMarketChangePercent: d.regularMarketChangePercent || 0,
+    fiftyTwoWeekHigh:          d.fiftyTwoWeekHigh || p * 1.2,
+    fiftyTwoWeekLow:           d.fiftyTwoWeekLow  || p * 0.8,
+    marketCap:                 d.marketCap || null,
+    regularMarketVolume:       d.regularMarketVolume || null,
+  };
+}
 
-  const attempt = async (proxyUrl) => {
-    const r = await fetch(proxyUrl, { signal: mkTimeout(6000) });
+// Batch v7/quote — one request for all syms, races 6 proxies, returns array (possibly partial)
+async function yhBatch(syms) {
+  const fields = 'regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName';
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms.join(',')}&fields=${fields}`;
+  const attempt = async p => {
+    const r = await fetch(p, { signal: mkTimeout(10000) });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const res = d?.quoteResponse?.result;
+    if (!res?.length) throw new Error('empty');
+    return res.map(s => normaliseYH(s.symbol, s)).filter(Boolean);
+  };
+  try { return await Promise.any(yhProxies(url).map(attempt)); } catch { return []; }
+}
+
+// Single symbol — tries v7/quote then v8/chart, 6 proxies each
+async function yhSingle(sym) {
+  // v7/quote (same response format as batch — simpler to parse)
+  const url7 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${sym}`;
+  const attempt7 = async p => {
+    const r = await fetch(p, { signal: mkTimeout(8000) });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const s = d?.quoteResponse?.result?.[0];
+    if (!(s?.regularMarketPrice > 0)) throw new Error('no price');
+    return normaliseYH(sym, s);
+  };
+  try { return await Promise.any(yhProxies(url7).map(attempt7)); } catch {}
+
+  // v8/chart fallback
+  const url8 = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
+  const attempt8 = async p => {
+    const r = await fetch(p, { signal: mkTimeout(8000) });
     if (!r.ok) throw new Error(r.status);
     const d = await r.json();
     const meta = d?.chart?.result?.[0]?.meta;
     if (!(meta?.regularMarketPrice > 0)) throw new Error('no price');
     const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
-    return normaliseASXStock(sym, {
-      regularMarketPrice: meta.regularMarketPrice,
-      regularMarketChangePercent: meta.regularMarketChangePercent || ((meta.regularMarketPrice - prev) / prev * 100),
-      fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh,
-      fiftyTwoWeekLow:  meta.fiftyTwoWeekLow,
+    return normaliseYH(sym, {
+      regularMarketPrice:        meta.regularMarketPrice,
+      regularMarketChangePercent: meta.regularMarketChangePercent ||
+                                  ((meta.regularMarketPrice - prev) / prev * 100),
+      fiftyTwoWeekHigh:    meta.fiftyTwoWeekHigh,
+      fiftyTwoWeekLow:     meta.fiftyTwoWeekLow,
       regularMarketVolume: meta.regularMarketVolume,
     });
   };
-
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-    `https://corsproxy.io/?${encodeURIComponent(base)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(base2)}`,
-  ];
-
-  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
+  try { return await Promise.any(yhProxies(url8).map(attempt8)); } catch { return null; }
 }
 
+// Fetch all syms: batch first, then individually fill any gaps
+async function yhFetchAll(syms) {
+  let data = await yhBatch(syms);
+  const got = new Set(data.map(s => s.symbol));
+  const missing = syms.filter(s => !got.has(s));
+  if (missing.length) {
+    const fills = await Promise.all(missing.map(s => yhSingle(s)));
+    data = [...data, ...fills.filter(Boolean)];
+  }
+  return data;
+}
+
+// Helper: save to both caches and render
+function yhCommit(dataKey, tableType, tableId, cacheKey, storeKey, data) {
+  TSP[dataKey] = data;
+  const payload = JSON.stringify({ data, ts: Date.now() });
+  try { sessionStorage.setItem(cacheKey, payload); } catch {}
+  try { localStorage.setItem(storeKey, payload); } catch {}
+  if (typeof renderStocks === 'function') renderStocks(tableType, data, tableId);
+  if (typeof updateAlerts === 'function') updateAlerts();
+  if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
+}
+
+// ── US STOCKS ────────────────────────────────────────
+const US_CACHE_KEY = 'tsp_us_cache';  const US_CACHE_TTL = 5  * 60 * 1000;
+const US_STORE_KEY = 'tsp_us_store';  const US_STORE_TTL = 30 * 60 * 1000;
+
+async function fetchUS() {
+  try {
+    const { data, ts } = JSON.parse(sessionStorage.getItem(US_CACHE_KEY) || '{}');
+    if (Date.now() - ts < US_CACHE_TTL && data?.length) {
+      yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
+      fetchUSFresh(); return;
+    }
+  } catch {}
+  try {
+    const { data, ts } = JSON.parse(localStorage.getItem(US_STORE_KEY) || '{}');
+    if (Date.now() - ts < US_STORE_TTL && data?.length) {
+      yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
+      fetchUSFresh(); return;
+    }
+  } catch {}
+  const el = document.getElementById('usTable');
+  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching US stock data…</div>';
+  await fetchUSFresh(true);
+}
+
+async function fetchUSFresh(showErrors) {
+  const data = await yhFetchAll(US_SYMS);
+  if (data.length) {
+    yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
+  } else if (showErrors) {
+    const el = document.getElementById('usTable');
+    if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
+      <div>⚠ US data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
+  }
+}
+
+const fetchAllStocks = fetchUS; // alias for all pages that call fetchAllStocks
+
+// ── ASX STOCKS ───────────────────────────────────────
+const ASX_CACHE_KEY = 'tsp_asx_cache';  const ASX_CACHE_TTL = 5  * 60 * 1000;
+const ASX_STORE_KEY = 'tsp_asx_store';  const ASX_STORE_TTL = 30 * 60 * 1000;
+
 async function fetchASX() {
+  try {
+    const { data, ts } = JSON.parse(sessionStorage.getItem(ASX_CACHE_KEY) || '{}');
+    if (Date.now() - ts < ASX_CACHE_TTL && data?.length) {
+      yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
+      fetchASXFresh(); return;
+    }
+  } catch {}
+  try {
+    const { data, ts } = JSON.parse(localStorage.getItem(ASX_STORE_KEY) || '{}');
+    if (Date.now() - ts < ASX_STORE_TTL && data?.length) {
+      yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
+      fetchASXFresh(); return;
+    }
+  } catch {}
   const el = document.getElementById('asxTable');
-
-  // 1. Try sessionStorage cache first (fastest — same tab)
-  try {
-    const raw = sessionStorage.getItem(ASX_CACHE_KEY);
-    if (raw) {
-      const { data, ts } = JSON.parse(raw);
-      if (Date.now() - ts < ASX_CACHE_TTL && data?.length) {
-        TSP.asxData = data;
-        if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
-        if (typeof updateAlerts === 'function') updateAlerts();
-        fetchASXFresh(false); // silent background refresh
-        return;
-      }
-    }
-  } catch {}
-
-  // 2. Try localStorage stale cache (cross-tab — shows data immediately while fetching)
-  try {
-    const raw = localStorage.getItem(ASX_STORE_KEY);
-    if (raw) {
-      const { data, ts } = JSON.parse(raw);
-      if (Date.now() - ts < ASX_STORE_TTL && data?.length) {
-        TSP.asxData = data;
-        if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
-        if (typeof updateAlerts === 'function') updateAlerts();
-        fetchASXFresh(false); // silent background refresh
-        return;
-      }
-    }
-  } catch {}
-
-  // 3. No cache at all — show spinner and fetch
   if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Fetching ASX data…</div>';
   await fetchASXFresh(true);
 }
 
 async function fetchASXFresh(showErrors) {
-  // Try batch first (1 request = instant)
-  let data = await fetchASXBatch();
-
-  // Batch failed — try all 15 in full parallel (no stagger, no delays)
-  if (!data?.length) {
-    const results = await Promise.all(ASX_SYMS.map(sym => fetchASXSingle(sym)));
-    data = results.filter(Boolean);
-  }
-
-  if (data?.length) {
-    TSP.asxData = data;
-    const payload = JSON.stringify({ data, ts: Date.now() });
-    try { sessionStorage.setItem(ASX_CACHE_KEY, payload); } catch {}
-    try { localStorage.setItem(ASX_STORE_KEY, payload); } catch {}
-    if (typeof renderStocks === 'function') renderStocks('asx', TSP.asxData, 'asxTable');
-    if (typeof updateAlerts === 'function') updateAlerts();
-    if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
+  const data = await yhFetchAll(ASX_SYMS);
+  if (data.length) {
+    yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
   } else if (showErrors) {
     const el = document.getElementById('asxTable');
     if (el) el.innerHTML = `<div class="loading" style="flex-direction:column;gap:6px;color:var(--amber)">
-      <div>⚠ ASX data unavailable — proxies rate limited</div>
-      <div style="font-size:11px;color:var(--text3)">Will retry on next refresh</div>
-    </div>`;
+      <div>⚠ ASX data unavailable — all proxies failed. Will retry on next refresh.</div></div>`;
   }
 }
 

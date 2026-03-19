@@ -108,6 +108,7 @@ async function refreshPage() {
   const btn = document.getElementById('refreshBtn');
   if (btn) btn.textContent = '⟳ Loading…';
   TSP.countdown = REFRESH_SEC;
+  try { sessionStorage.removeItem(ASX_CACHE_KEY); } catch {}
   await fetchASX();
   if (btn) btn.textContent = '⟳ Refresh';
   startCountdown();
