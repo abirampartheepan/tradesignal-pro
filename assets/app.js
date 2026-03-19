@@ -10,7 +10,7 @@ const AUD_FALLBACK  = 1.57;
 
 // FMP (Financial Modeling Prep) — free tier, 250 requests/day
 // Get your free key at: https://site.financialmodelingprep.com/ (no credit card needed)
-const FMP_KEY = '';
+const FMP_KEY = 'ZQD2SdTNsOBRTLuNlq5EU9BDpZteY3bm';
 
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
 const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
