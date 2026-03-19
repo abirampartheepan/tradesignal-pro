@@ -299,6 +299,26 @@ function generateAnalysis(asset) {
       paragraphs.push(`Trading at ${rangePct}% of its 52-week range ($${fPrice(low52)} – $${fPrice(high52)}), ${name} is ${rangePct > 80 ? 'approaching annual highs — a zone of historically significant resistance where supply tends to outpace demand' : 'in the upper portion of its annual range, where risk/reward becomes less favourable for new long positions'}.`);
 
     paragraphs.push(`<b>⚠ Risk Factors:</b> Strong momentum can persist well beyond overbought RSI levels — particularly in trending markets. This signal reflects technical conditions only. A partial reduction in existing positions may be more prudent than a full exit. Consider the broader market trend and your original investment thesis before acting.`);
+
+  } else {
+    // HOLD
+    paragraphs.push(
+      `<b>Technical Basis:</b> ${name} is currently exhibiting a ${rsi ? `14-period RSI of ${f2(rsi, 1)}, which is ${rsiDesc}.` : 'balanced momentum indicators.'} Neither overbought nor oversold conditions are present, suggesting the market has not yet reached a decisive inflection point in either direction.`
+    );
+
+    if (c24 !== null) {
+      if (Math.abs(c24) < 1)
+        paragraphs.push(`The negligible ${f2(c24)}% daily move reinforces the neutral reading — low intraday volatility alongside a mid-range RSI typically indicates a period of consolidation or accumulation before the next directional move.`);
+      else if (c24 > 0)
+        paragraphs.push(`The ${f2(c24)}% intraday gain adds mild positive bias, but RSI has not yet crossed into buy signal territory. This may be an early sign of building momentum — worth monitoring for confirmation over subsequent sessions.`);
+      else
+        paragraphs.push(`The ${Math.abs(f2(c24))}% intraday decline adds mild negative bias, though RSI has not reached oversold levels. Sustained weakness without a corresponding RSI dip may indicate gradual distribution rather than capitulation.`);
+    }
+
+    if (rangePct !== null)
+      paragraphs.push(`${name} is trading at ${rangePct}% of its 52-week range ($${fPrice(low52)} – $${fPrice(high52)}), placing it ${rangePct < 40 ? 'in the lower half of its annual range — closer to support than resistance' : rangePct > 60 ? 'in the upper half of its annual range — approaching areas of historical supply' : 'near the midpoint of its annual range, where neither bulls nor bears have a structural advantage'}.`);
+
+    paragraphs.push(`<b>ℹ️ What to Watch:</b> HOLD signals indicate no strong technical edge at current levels. Key triggers to monitor include an RSI break below 35 (potential BUY setup) or above 65 (potential SELL setup), a meaningful change in daily momentum, or a breakout/breakdown from the current price range. This analysis is based on technical indicators only and does not constitute financial advice.`);
   }
 
   return paragraphs;
@@ -562,12 +582,33 @@ async function fetchUSCustom() {
   const panel = document.getElementById('usCustomPanel');
   if (!syms.length) { if (panel) panel.style.display = 'none'; return; }
   if (panel) panel.style.display = '';
+  const cacheKey = 'tsp_us_custom_cache';
+  const storeKey = `tsp_us_custom_store_${getSession()?.username||'guest'}`;
+  // Show cached data immediately
+  const _render = (data) => {
+    TSP.usCustomData = data;
+    if (panel) panel.style.display = data.length ? '' : 'none';
+    if (data.length && typeof renderStocks === 'function') renderStocks('us', data, 'usCustomTable');
+  };
+  try {
+    const { data, ts } = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+    if (Date.now() - ts < 5*60*1000 && data?.length) { _render(data); fetchUSCustomFresh(syms, cacheKey, storeKey, _render); return; }
+  } catch {}
+  try {
+    const { data } = JSON.parse(localStorage.getItem(storeKey) || '{}');
+    if (data?.length) { _render(data); fetchUSCustomFresh(syms, cacheKey, storeKey, _render); return; }
+  } catch {}
   const el = document.getElementById('usCustomTable');
-  if (el && !TSP.usCustomData.length) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  await fetchUSCustomFresh(syms, cacheKey, storeKey, _render);
+}
+async function fetchUSCustomFresh(syms, cacheKey, storeKey, _render) {
   const data = await yhFetchAll(syms, 'us');
-  TSP.usCustomData = data;
-  if (panel) panel.style.display = data.length ? '' : 'none';
-  if (data.length && typeof renderStocks === 'function') renderStocks('us', data, 'usCustomTable');
+  if (!data.length) return;
+  const payload = JSON.stringify({ data, ts: Date.now() });
+  try { sessionStorage.setItem(cacheKey, payload); } catch {}
+  try { localStorage.setItem(storeKey, payload); } catch {}
+  _render(data);
 }
 
 const fetchAllStocks = fetchUS; // alias for all pages that call fetchAllStocks
@@ -602,12 +643,32 @@ async function fetchASXCustom() {
   const panel = document.getElementById('asxCustomPanel');
   if (!syms.length) { if (panel) panel.style.display = 'none'; return; }
   if (panel) panel.style.display = '';
+  const cacheKey = 'tsp_asx_custom_cache';
+  const storeKey = `tsp_asx_custom_store_${getSession()?.username||'guest'}`;
+  const _render = (data) => {
+    TSP.asxCustomData = data;
+    if (panel) panel.style.display = data.length ? '' : 'none';
+    if (data.length && typeof renderStocks === 'function') renderStocks('asx', data, 'asxCustomTable');
+  };
+  try {
+    const { data, ts } = JSON.parse(sessionStorage.getItem(cacheKey) || '{}');
+    if (Date.now() - ts < 5*60*1000 && data?.length) { _render(data); fetchASXCustomFresh(syms, cacheKey, storeKey, _render); return; }
+  } catch {}
+  try {
+    const { data } = JSON.parse(localStorage.getItem(storeKey) || '{}');
+    if (data?.length) { _render(data); fetchASXCustomFresh(syms, cacheKey, storeKey, _render); return; }
+  } catch {}
   const el = document.getElementById('asxCustomTable');
-  if (el && !TSP.asxCustomData.length) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  if (el) el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading your stocks…</div>';
+  await fetchASXCustomFresh(syms, cacheKey, storeKey, _render);
+}
+async function fetchASXCustomFresh(syms, cacheKey, storeKey, _render) {
   const data = await yhFetchAll(syms, 'asx');
-  TSP.asxCustomData = data;
-  if (panel) panel.style.display = data.length ? '' : 'none';
-  if (data.length && typeof renderStocks === 'function') renderStocks('asx', data, 'asxCustomTable');
+  if (!data.length) return;
+  const payload = JSON.stringify({ data, ts: Date.now() });
+  try { sessionStorage.setItem(cacheKey, payload); } catch {}
+  try { localStorage.setItem(storeKey, payload); } catch {}
+  _render(data);
 }
 
 async function fetchASXFresh(showErrors) {
@@ -730,7 +791,7 @@ function openModal(asset) {
       <div class="modal-body">
         <div class="signal-header ${asset.signal}">
           <div>
-            <div class="sig-type ${asset.signal === 'BUY' ? 'g' : 'r'}">${asset.signal === 'BUY' ? '▲ BUY SIGNAL' : '▼ SELL SIGNAL'}</div>
+            <div class="sig-type ${asset.signal === 'BUY' ? 'g' : asset.signal === 'SELL' ? 'r' : ''}" style="${asset.signal === 'HOLD' ? 'color:var(--amber)' : ''}">${asset.signal === 'BUY' ? '▲ BUY SIGNAL' : asset.signal === 'SELL' ? '▼ SELL SIGNAL' : '● HOLD — NEUTRAL'}</div>
             <div class="sig-price">$${fPrice(asset.price)}${asset.audPrice && asset.type !== 'ASX Stock' ? ` <span style="font-size:14px;color:var(--text2)">/ A$${fPrice(asset.audPrice)}</span>` : ''}</div>
             <div class="sig-meta">${asset.c24 != null ? `24h: ${chgBadge(asset.c24)}` : ''} ${asset.c7 != null ? `&nbsp;7d: ${chgBadge(asset.c7)}` : ''}</div>
           </div>
@@ -747,8 +808,8 @@ function openModal(asset) {
           </div>
           <div class="analysis-stat">
             <div class="as-lbl">Signal Strength</div>
-            <div class="as-val" style="color:${asset.signal==='BUY'?'var(--green)':'var(--red)'}">
-              ${asset.str === 3 ? 'Strong' : asset.str === 2 ? 'Moderate' : 'Weak'}
+            <div class="as-val" style="color:${asset.signal==='BUY'?'var(--green)':asset.signal==='SELL'?'var(--red)':'var(--amber)'}">
+              ${asset.signal === 'HOLD' ? 'Neutral' : asset.str === 3 ? 'Strong' : asset.str === 2 ? 'Moderate' : 'Weak'}
             </div>
           </div>
         </div>
@@ -760,7 +821,9 @@ function openModal(asset) {
           </div>
         </div>
 
-        <div class="risk-box">${paragraphs[paragraphs.length-1]}</div>
+        <div class="risk-box" style="${asset.signal==='HOLD'?'border-color:var(--amber);background:rgba(245,158,11,0.08)':''}">
+          ${paragraphs[paragraphs.length-1]}
+        </div>
       </div>
     </div>`;
 
