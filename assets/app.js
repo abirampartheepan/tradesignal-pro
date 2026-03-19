@@ -217,6 +217,25 @@ function chgBadge(v) {
   return `<span class="chg ${cls}">${gs(v)}${f2(v)}%</span>`;
 }
 
+// ── SPARKLINE SVG ───────────────────────────────────
+function sparklineSVG(prices, width=120, height=32) {
+  if (!prices || prices.length < 2) return '<svg width="'+width+'" height="'+height+'"></svg>';
+  // Downsample to ~60 points for performance
+  const step = Math.max(1, Math.floor(prices.length / 60));
+  const pts = prices.filter((_, i) => i % step === 0 || i === prices.length - 1);
+  const min = Math.min(...pts), max = Math.max(...pts);
+  const range = max - min || 1;
+  const pad = 2;
+  const w = width - pad * 2, h = height - pad * 2;
+  const d = pts.map((p, i) => {
+    const x = pad + (i / (pts.length - 1)) * w;
+    const y = pad + h - ((p - min) / range) * h;
+    return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  const color = pts[pts.length - 1] >= pts[0] ? 'var(--green,#22c55e)' : 'var(--red,#ef4444)';
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="display:block"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
 // ── RSI CALCULATION ─────────────────────────────────
 function calcRSI(prices, period=14) {
   if (!prices || prices.length < period+1) return null;
@@ -384,7 +403,7 @@ function mkTimeout(ms) {
   }
 }
 
-// Build 6 proxy URLs for a Yahoo Finance endpoint (query1 + query2 × 3 services)
+// Build proxy URLs for a Yahoo Finance endpoint — maximise chances with many services
 function yhProxies(url) {
   const u2 = url.replace('query1.finance', 'query2.finance');
   return [url, u2].flatMap(u => {
@@ -393,8 +412,15 @@ function yhProxies(url) {
       `https://api.allorigins.win/raw?url=${e}`,
       `https://corsproxy.io/?${e}`,
       `https://api.codetabs.com/v1/proxy?quest=${e}`,
+      `https://api.allorigins.win/get?url=${e}`,
+      `https://corsproxy.org/?${e}`,
     ];
   });
+}
+// allorigins /get returns JSON wrapper — helper to handle both raw and wrapped responses
+function proxyParse(proxy, response) {
+  if (proxy.includes('allorigins.win/get')) return response.json().then(j => JSON.parse(j.contents));
+  return response.json();
 }
 
 // Normalise any Yahoo Finance quote object into our internal shape
@@ -413,29 +439,29 @@ function normaliseYH(sym, d) {
   };
 }
 
-// Batch v7/quote — one request for all syms, races 6 proxies, returns array (possibly partial)
+// Batch v7/quote — one request for all syms, races proxies, returns array (possibly partial)
 async function yhBatch(syms) {
   const fields = 'regularMarketPrice,regularMarketChangePercent,fiftyTwoWeekHigh,fiftyTwoWeekLow,marketCap,regularMarketVolume,shortName';
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${syms.join(',')}&fields=${fields}`;
+  const proxies = yhProxies(url);
   const attempt = async p => {
-    const r = await fetch(p, { signal: mkTimeout(10000) });
+    const r = await fetch(p, { signal: mkTimeout(15000) });
     if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    const d = await proxyParse(p, r);
     const res = d?.quoteResponse?.result;
     if (!res?.length) throw new Error('empty');
     return res.map(s => normaliseYH(s.symbol, s)).filter(Boolean);
   };
-  try { return await Promise.any(yhProxies(url).map(attempt)); } catch { return []; }
+  try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
 }
 
-// Single symbol — tries v7/quote then v8/chart, 6 proxies each
+// Single symbol — tries v7/quote then v8/chart, many proxies each
 async function yhSingle(sym) {
-  // v7/quote (same response format as batch — simpler to parse)
   const url7 = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${sym}`;
   const attempt7 = async p => {
-    const r = await fetch(p, { signal: mkTimeout(8000) });
+    const r = await fetch(p, { signal: mkTimeout(12000) });
     if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    const d = await proxyParse(p, r);
     const s = d?.quoteResponse?.result?.[0];
     if (!(s?.regularMarketPrice > 0)) throw new Error('no price');
     return normaliseYH(sym, s);
@@ -445,9 +471,9 @@ async function yhSingle(sym) {
   // v8/chart fallback
   const url8 = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=5d`;
   const attempt8 = async p => {
-    const r = await fetch(p, { signal: mkTimeout(8000) });
+    const r = await fetch(p, { signal: mkTimeout(12000) });
     if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    const d = await proxyParse(p, r);
     const meta = d?.chart?.result?.[0]?.meta;
     if (!(meta?.regularMarketPrice > 0)) throw new Error('no price');
     const prev = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice;
@@ -484,6 +510,7 @@ async function stooqBatch(syms, market) {
     `https://api.allorigins.win/raw?url=${enc}`,
     `https://corsproxy.io/?${enc}`,
     `https://api.codetabs.com/v1/proxy?quest=${enc}`,
+    `https://corsproxy.org/?${enc}`,
   ];
   const attempt = async p => {
     const r = await fetch(p, { signal: mkTimeout(10000) });
@@ -510,8 +537,22 @@ async function stooqBatch(syms, market) {
   try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
 }
 
-// Fetch all syms: batch → individual gap-fill → Stooq fallback for anything still missing
+// Fetch all syms: batch → individual gap-fill → Stooq fallback → retry once if <60% filled
 async function yhFetchAll(syms, market) {
+  let data = await _yhFetchOnce(syms, market);
+  // If we got less than 60% of symbols, wait 3s and retry the missing ones
+  if (data.length < syms.length * 0.6 && syms.length > 3) {
+    const got = new Set(data.map(s => s.symbol));
+    const retry = syms.filter(s => !got.has(s));
+    if (retry.length) {
+      await new Promise(r => setTimeout(r, 3000));
+      const extra = await _yhFetchOnce(retry, market);
+      data = [...data, ...extra];
+    }
+  }
+  return data;
+}
+async function _yhFetchOnce(syms, market) {
   let data = await yhBatch(syms);
   const got1 = new Set(data.map(s => s.symbol));
   const missing1 = syms.filter(s => !got1.has(s));

@@ -115,6 +115,7 @@ function renderCrypto() {
       <th class="r">Price (AUD)</th>
       <th class="r">24h</th>
       <th class="r">7d</th>
+      <th>7D Chart</th>
       <th>RSI (14)</th>
       <th class="r">Market Cap</th>
       <th class="r">Volume 24h</th>
@@ -143,6 +144,7 @@ function renderCrypto() {
         <td class="r mono" style="color:var(--text2)">A$${fPrice(c.current_price*TSP.audRate)}</td>
         <td class="r">${chgBadge(c.c24)}</td>
         <td class="r">${chgBadge(c.c7)}</td>
+        <td>${sparklineSVG(c.sparkline_in_7d?.price)}</td>
         <td>
           <div class="rsi-wrap">
             <span class="rsi-val" style="color:${rsiColor}">${c.rsi ? f2(c.rsi,1) : '—'}</span>
