@@ -415,7 +415,7 @@ function normaliseStock(sym, d) {
     symbol:                    sym,
     shortName:                 STOCK_NAMES[sym] || d.name || d.shortName || sym,
     regularMarketPrice:        p,
-    regularMarketChangePercent: d.changesPercentage ?? d.regularMarketChangePercent ?? 0,
+    regularMarketChangePercent: d.changePercentage ?? d.changesPercentage ?? d.regularMarketChangePercent ?? 0,
     fiftyTwoWeekHigh:          d.yearHigh  || d.fiftyTwoWeekHigh || p * 1.2,
     fiftyTwoWeekLow:           d.yearLow   || d.fiftyTwoWeekLow  || p * 0.8,
     marketCap:                 d.marketCap || null,
@@ -423,28 +423,23 @@ function normaliseStock(sym, d) {
   };
 }
 
-// ── FMP (PRIMARY) ──────────────────────────────────
-async function fmpBatch(syms) {
-  if (!FMP_KEY) return [];
-  const url = `https://financialmodelingprep.com/api/v3/quote/${syms.join(',')}?apikey=${FMP_KEY}`;
-  try {
-    const r = await fetch(url, { signal: mkTimeout(15000) });
-    if (!r.ok) throw new Error(r.status);
-    const arr = await r.json();
-    if (!Array.isArray(arr) || !arr.length) return [];
-    return arr.map(s => normaliseStock(s.symbol, s)).filter(Boolean);
-  } catch { return []; }
-}
-
+// ── FMP (PRIMARY — US stocks only on free tier) ────
 async function fmpSingle(sym) {
   if (!FMP_KEY) return null;
   try {
-    const r = await fetch(`https://financialmodelingprep.com/api/v3/quote/${sym}?apikey=${FMP_KEY}`, { signal: mkTimeout(12000) });
+    const r = await fetch(`https://financialmodelingprep.com/stable/quote?symbol=${sym}&apikey=${FMP_KEY}`, { signal: mkTimeout(12000) });
     if (!r.ok) return null;
     const arr = await r.json();
-    if (!arr?.[0]?.price) return null;
+    if (!Array.isArray(arr) || !arr?.[0]?.price) return null;
     return normaliseStock(sym, arr[0]);
   } catch { return null; }
+}
+
+// Fetch all symbols via FMP individually in parallel (free tier doesn't support batch)
+async function fmpParallel(syms) {
+  if (!FMP_KEY) return [];
+  const results = await Promise.all(syms.map(s => fmpSingle(s)));
+  return results.filter(Boolean);
 }
 
 // ── YAHOO FINANCE (FALLBACK) ───────────────────────
@@ -538,13 +533,17 @@ async function stooqBatch(syms, market) {
   try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
 }
 
-// ── UNIFIED FETCH: FMP → Yahoo → Stooq ────────────
+// ── UNIFIED FETCH: FMP (US) / Yahoo+Stooq (ASX) ───
 async function fetchStockData(syms, market) {
-  // 1. Try FMP first (direct, fast, reliable)
-  let data = await fmpBatch(syms);
-  if (data.length >= syms.length * 0.8) return data;
+  let data = [];
 
-  // 2. Gap-fill with Yahoo for anything FMP missed
+  // 1. For US stocks: try FMP first (direct CORS, no proxy needed)
+  if (market === 'us') {
+    data = await fmpParallel(syms);
+    if (data.length >= syms.length * 0.8) return data;
+  }
+
+  // 2. Yahoo batch for anything still missing (all markets)
   const got1 = new Set(data.map(s => s.symbol));
   const missing1 = syms.filter(s => !got1.has(s));
   if (missing1.length) {
@@ -552,11 +551,14 @@ async function fetchStockData(syms, market) {
     data = [...data, ...yhData];
   }
 
-  // 3. Individual Yahoo fetch for still-missing symbols
+  // 3. Individual fetches for still-missing (FMP for US, Yahoo for ASX)
   const got2 = new Set(data.map(s => s.symbol));
   const missing2 = syms.filter(s => !got2.has(s));
   if (missing2.length) {
-    const fills = await Promise.all(missing2.map(s => fmpSingle(s) || yhSingle(s)));
+    const fills = await Promise.all(missing2.map(async s => {
+      if (market === 'us') { const f = await fmpSingle(s); if (f) return f; }
+      return await yhSingle(s);
+    }));
     data = [...data, ...fills.filter(Boolean)];
   }
 
