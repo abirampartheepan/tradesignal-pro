@@ -49,6 +49,112 @@ function appendSignalLog(entry){
 }
 function clearSignalLog(){ localStorage.removeItem(sigLogKey()); }
 
+// ── CUSTOM SYMBOLS ───────────────────────────────────
+function customSymKey(market) {
+  const s = getSession();
+  return `tsp_custom_${market}_${s?.username || 'guest'}`;
+}
+function getCustomSyms(market) {
+  try { return JSON.parse(localStorage.getItem(customSymKey(market)) || '[]'); } catch { return []; }
+}
+function saveCustomSyms(market, list) { localStorage.setItem(customSymKey(market), JSON.stringify(list)); }
+function addCustomSym(market, sym) {
+  const list = getCustomSyms(market);
+  if (!list.includes(sym)) saveCustomSyms(market, [...list, sym]);
+}
+function removeCustomSym(market, sym) { saveCustomSyms(market, getCustomSyms(market).filter(s => s !== sym)); }
+
+function openAddSymModal(market) {
+  document.getElementById('addSymModal')?.remove();
+  const existing = getCustomSyms(market);
+  const label = market === 'us' ? 'US Stock' : market === 'asx' ? 'ASX Stock' : 'Cryptocurrency';
+  const ph    = market === 'crypto' ? 'e.g. solana, chainlink, polkadot' : market === 'us' ? 'e.g. AMGN, BA, GS' : 'e.g. MIN.AX, PLS.AX';
+  const m = document.createElement('div');
+  m.className = 'modal-backdrop'; m.id = 'addSymModal';
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.innerHTML = `
+    <div class="modal" style="max-width:480px;width:90%">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">Add ${label}</div>
+          <div class="modal-sub">Search and add a custom symbol to the live table</div>
+        </div>
+        <button class="modal-close" onclick="document.getElementById('addSymModal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="addSymInput" class="settings-input" placeholder="${ph}" style="flex:1;margin:0"
+            onkeydown="if(event.key==='Enter')searchAddSym('${market}')">
+          <button class="settings-btn" style="margin:0;padding:0 16px" onclick="searchAddSym('${market}')">Search</button>
+        </div>
+        <div id="addSymResult" style="min-height:52px;margin-bottom:${existing.length ? 16 : 0}px"></div>
+        ${existing.length ? `
+          <div style="font-size:11px;color:var(--text3);margin-bottom:8px;letter-spacing:.05em">YOUR CUSTOM SYMBOLS</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${existing.map(s => `<span class="custom-sym-tag">${s}<button onclick="removeAndRefresh('${market}','${s}')" title="Remove">✕</button></span>`).join('')}
+          </div>` : ''}
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+}
+
+async function searchAddSym(market) {
+  const inp = document.getElementById('addSymInput');
+  const res = document.getElementById('addSymResult');
+  if (!inp || !res) return;
+  const raw = inp.value.trim();
+  if (!raw) return;
+  res.innerHTML = '<div class="loading" style="justify-content:flex-start;gap:8px;padding:0;min-height:0"><div class="spinner"></div> Searching…</div>';
+
+  if (market === 'crypto') {
+    try {
+      const r = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(raw)}`, { signal: mkTimeout(8000) });
+      const d = await r.json();
+      const coin = d?.coins?.[0];
+      if (!coin) { res.innerHTML = '<div style="color:var(--red);font-size:12px">No coin found — try the full name.</div>'; return; }
+      res.innerHTML = `<div class="add-sym-result">
+        <div><div style="font-weight:700">${coin.name} <span style="color:var(--text3);font-weight:400">${coin.symbol.toUpperCase()}</span></div>
+        <div style="font-size:11px;color:var(--text3)">Rank #${coin.market_cap_rank || '?'}</div></div>
+        <button class="settings-btn" style="margin:0;padding:0 14px" onclick="confirmAddSym('crypto','${coin.id}','${coin.name}')">+ Add</button></div>`;
+    } catch { res.innerHTML = '<div style="color:var(--red);font-size:12px">Search failed — try again.</div>'; }
+    return;
+  }
+
+  const sym = (market === 'asx' && !raw.toUpperCase().includes('.')) ? raw.toUpperCase() + '.AX' : raw.toUpperCase();
+  const data = await yhSingle(sym);
+  if (!data) {
+    res.innerHTML = `<div style="color:var(--red);font-size:12px">Symbol not found. ${market === 'asx' ? 'Use format: MIN.AX' : 'Check the ticker is correct.'}</div>`;
+    return;
+  }
+  res.innerHTML = `<div class="add-sym-result">
+    <div><div style="font-weight:700">${data.shortName} <span style="color:var(--text3);font-weight:400">${data.symbol}</span></div>
+    <div style="font-size:11px;color:var(--text3)">$${fPrice(data.regularMarketPrice)} · ${data.regularMarketChangePercent >= 0 ? '+' : ''}${f2(data.regularMarketChangePercent)}%</div></div>
+    <button class="settings-btn" style="margin:0;padding:0 14px" onclick="confirmAddSym('${market}','${data.symbol}','${data.shortName}')">+ Add</button></div>`;
+}
+
+function confirmAddSym(market, sym, name) {
+  if (getCustomSyms(market).includes(sym)) {
+    showToast('INFO', 'Already added', `${name} is already in your list`);
+    document.getElementById('addSymModal')?.remove();
+    return;
+  }
+  addCustomSym(market, sym);
+  showToast('INFO', '✅ Added', `${name} added`);
+  document.getElementById('addSymModal')?.remove();
+  if (market === 'us')     { try{sessionStorage.removeItem(US_CACHE_KEY);}catch{} fetchUS(); }
+  if (market === 'asx')    { try{sessionStorage.removeItem(ASX_CACHE_KEY);}catch{} fetchASX(); }
+  if (market === 'crypto') fetchCustomCrypto();
+}
+
+function removeAndRefresh(market, sym) {
+  removeCustomSym(market, sym);
+  document.getElementById('addSymModal')?.remove();
+  if (market === 'us')  { TSP.usData  = TSP.usData.filter(s => s.symbol !== sym);  if(typeof renderStocks==='function') renderStocks('us', TSP.usData, 'usTable'); }
+  if (market === 'asx') { TSP.asxData = TSP.asxData.filter(s => s.symbol !== sym); if(typeof renderStocks==='function') renderStocks('asx', TSP.asxData, 'asxTable'); }
+  if (market === 'crypto') { TSP.cryptoData = TSP.cryptoData.filter(c => c.id !== sym); if(typeof renderCrypto==='function') renderCrypto(); }
+  showToast('INFO', 'Removed', `${sym} removed`);
+}
+
 // ── GLOBAL STATE ────────────────────────────────────
 window.TSP = window.TSP || {
   cryptoData: [],
@@ -202,10 +308,28 @@ async function fetchCrypto() {
     if (typeof renderCrypto === 'function') renderCrypto();
     if (typeof updateStats === 'function') updateStats();
     if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
+    fetchCustomCrypto(); // load any user-added coins in background
   } catch(e) {
     const el = document.getElementById('cryptoTable');
     if (el) el.innerHTML = '<div class="loading" style="color:var(--red)">⚠ CoinGecko rate limited — retrying on next refresh</div>';
   }
+}
+
+async function fetchCustomCrypto() {
+  const ids = getCustomSyms('crypto');
+  if (!ids.length) return;
+  try {
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids.join(',')}&sparkline=true&price_change_percentage=24h%2C7d`,
+      { signal: mkTimeout(10000) }
+    );
+    if (!r.ok) return;
+    const coins = await r.json();
+    if (!coins?.length) return;
+    const newIds = new Set(coins.map(c => c.id));
+    TSP.cryptoData = [...TSP.cryptoData.filter(c => !newIds.has(c.id)), ...coins];
+    if (typeof renderCrypto === 'function') renderCrypto();
+  } catch {}
 }
 
 // ── YAHOO FINANCE SHARED FETCH LAYER ────────────────
@@ -304,14 +428,69 @@ async function yhSingle(sym) {
   try { return await Promise.any(yhProxies(url8).map(attempt8)); } catch { return null; }
 }
 
-// Fetch all syms: batch first, then individually fill any gaps
-async function yhFetchAll(syms) {
+// Stooq CSV — completely different server, works when Yahoo proxies are blocked
+function toStooqSym(sym, market) {
+  if (market === 'us')  return sym.toLowerCase() + '.us';
+  if (market === 'asx') return sym.toLowerCase().replace('.ax', '.au');
+  return sym.toLowerCase();
+}
+function fromStooqSym(stooqSym, market) {
+  const s = stooqSym.trim().toUpperCase();
+  if (market === 'us')  return s.replace(/\.US$/, '');
+  if (market === 'asx') return s.replace(/\.AU$/, '.AX');
+  return s;
+}
+async function stooqBatch(syms, market) {
+  if (!syms.length) return [];
+  const ss  = syms.map(s => toStooqSym(s, market)).join(',');
+  const url = `https://stooq.com/q/l/?s=${ss}&f=sd2ohlcv&h&e=csv`;
+  const enc = encodeURIComponent(url);
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${enc}`,
+    `https://corsproxy.io/?${enc}`,
+    `https://api.codetabs.com/v1/proxy?quest=${enc}`,
+  ];
+  const attempt = async p => {
+    const r = await fetch(p, { signal: mkTimeout(10000) });
+    if (!r.ok) throw new Error(r.status);
+    const text = await r.text();
+    if (!text || text.length < 30) throw new Error('empty');
+    const lines = text.trim().split('\n').slice(1);
+    return lines.map(line => {
+      const cols = line.trim().split(',');
+      if (cols.length < 7) return null;
+      const [rawSym,,, open,,, close, vol] = cols;
+      const price = parseFloat(close), openP = parseFloat(open);
+      if (!price || price <= 0 || isNaN(price) || close.trim() === 'N/A') return null;
+      const origSym = fromStooqSym(rawSym, market);
+      return normaliseYH(origSym, {
+        regularMarketPrice:         price,
+        regularMarketChangePercent: openP > 0 ? (price - openP) / openP * 100 : 0,
+        fiftyTwoWeekHigh: null,
+        fiftyTwoWeekLow:  null,
+        regularMarketVolume: parseInt(vol) || null,
+      });
+    }).filter(Boolean);
+  };
+  try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
+}
+
+// Fetch all syms: batch → individual gap-fill → Stooq fallback for anything still missing
+async function yhFetchAll(syms, market) {
   let data = await yhBatch(syms);
-  const got = new Set(data.map(s => s.symbol));
-  const missing = syms.filter(s => !got.has(s));
-  if (missing.length) {
-    const fills = await Promise.all(missing.map(s => yhSingle(s)));
+  const got1 = new Set(data.map(s => s.symbol));
+  const missing1 = syms.filter(s => !got1.has(s));
+  if (missing1.length) {
+    const fills = await Promise.all(missing1.map(s => yhSingle(s)));
     data = [...data, ...fills.filter(Boolean)];
+  }
+  if (market) {
+    const got2 = new Set(data.map(s => s.symbol));
+    const missing2 = syms.filter(s => !got2.has(s));
+    if (missing2.length) {
+      const stooq = await stooqBatch(missing2, market);
+      data = [...data, ...stooq];
+    }
   }
   return data;
 }
@@ -352,7 +531,7 @@ async function fetchUS() {
 }
 
 async function fetchUSFresh(showErrors) {
-  const data = await yhFetchAll(US_SYMS);
+  const data = await yhFetchAll([...US_SYMS, ...getCustomSyms('us')], 'us');
   if (data.length) {
     yhCommit('usData', 'us', 'usTable', US_CACHE_KEY, US_STORE_KEY, data);
   } else if (showErrors) {
@@ -389,7 +568,7 @@ async function fetchASX() {
 }
 
 async function fetchASXFresh(showErrors) {
-  const data = await yhFetchAll(ASX_SYMS);
+  const data = await yhFetchAll([...ASX_SYMS, ...getCustomSyms('asx')], 'asx');
   if (data.length) {
     yhCommit('asxData', 'asx', 'asxTable', ASX_CACHE_KEY, ASX_STORE_KEY, data);
   } else if (showErrors) {

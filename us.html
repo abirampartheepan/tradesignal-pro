@@ -54,10 +54,13 @@
             <div class="panel-title">US Equities — NYSE / NASDAQ</div>
             <div class="panel-meta">Top 15 stocks · Trend RSI from 52-week position + momentum · Click any row for analysis</div>
           </div>
-          <div class="tab-group">
-            <div class="tab active" onclick="switchTab('us','all',this)">All</div>
-            <div class="tab" onclick="switchTab('us','buy',this)">Buy Signals</div>
-            <div class="tab" onclick="switchTab('us','sell',this)">Sell Signals</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="add-sym-btn" onclick="openAddSymModal('us')">+ Add Stock</button>
+            <div class="tab-group">
+              <div class="tab active" onclick="switchTab('us','all',this)">All</div>
+              <div class="tab" onclick="switchTab('us','buy',this)">Buy Signals</div>
+              <div class="tab" onclick="switchTab('us','sell',this)">Sell Signals</div>
+            </div>
           </div>
         </div>
         <div id="usTable">

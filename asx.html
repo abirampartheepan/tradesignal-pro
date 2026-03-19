@@ -54,10 +54,13 @@
             <div class="panel-title">ASX Equities — Australian Securities Exchange</div>
             <div class="panel-meta">Top 15 ASX stocks · All prices in AUD · Click any row for detailed signal analysis</div>
           </div>
-          <div class="tab-group">
-            <div class="tab active" onclick="switchTab('asx','all',this)">All</div>
-            <div class="tab" onclick="switchTab('asx','buy',this)">Buy Signals</div>
-            <div class="tab" onclick="switchTab('asx','sell',this)">Sell Signals</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="add-sym-btn" onclick="openAddSymModal('asx')">+ Add Stock</button>
+            <div class="tab-group">
+              <div class="tab active" onclick="switchTab('asx','all',this)">All</div>
+              <div class="tab" onclick="switchTab('asx','buy',this)">Buy Signals</div>
+              <div class="tab" onclick="switchTab('asx','sell',this)">Sell Signals</div>
+            </div>
           </div>
         </div>
         <div id="asxTable">

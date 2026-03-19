@@ -54,10 +54,13 @@
             <div class="panel-title">Cryptocurrency — Top 15 by Market Cap</div>
             <div class="panel-meta">RSI (14) calculated from 7-day sparkline · Click any row or signal for detailed analysis</div>
           </div>
-          <div class="tab-group">
-            <div class="tab active" onclick="switchTab('crypto','all',this)">All</div>
-            <div class="tab" onclick="switchTab('crypto','buy',this)">Buy Signals</div>
-            <div class="tab" onclick="switchTab('crypto','sell',this)">Sell Signals</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="add-sym-btn" onclick="openAddSymModal('crypto')">+ Add Coin</button>
+            <div class="tab-group">
+              <div class="tab active" onclick="switchTab('crypto','all',this)">All</div>
+              <div class="tab" onclick="switchTab('crypto','buy',this)">Buy Signals</div>
+              <div class="tab" onclick="switchTab('crypto','sell',this)">Sell Signals</div>
+            </div>
           </div>
         </div>
         <div id="cryptoTable">
