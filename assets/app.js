@@ -12,6 +12,11 @@ const AUD_FALLBACK  = 1.57;
 // Get your free key at: https://site.financialmodelingprep.com/ (no credit card needed)
 const FMP_KEY = 'ZQD2SdTNsOBRTLuNlq5EU9BDpZteY3bm';
 
+// RapidAPI Yahoo Finance — for ASX stocks (free tier: 500 requests/month)
+// Get your free key at: https://rapidapi.com/sparior/api/yahoo-finance15
+const RAPIDAPI_KEY = '';
+const RAPIDAPI_HOST = 'yahoo-finance15.p.rapidapi.com';
+
 const US_SYMS = ['NVDA','AAPL','MSFT','AMZN','META','GOOGL','TSLA','AMD','JPM','V','NFLX','DIS','COIN','PLTR','SOFI'];
 const ASX_SYMS = ['BHP.AX','CBA.AX','CSL.AX','ANZ.AX','WBC.AX','NAB.AX','WES.AX','MQG.AX','RIO.AX','TLS.AX','FMG.AX','WOW.AX','GMG.AX','REA.AX','XRO.AX'];
 
@@ -533,6 +538,40 @@ async function fmpParallel(syms) {
   return results.filter(Boolean);
 }
 
+// ── RAPIDAPI YAHOO FINANCE (ASX PRIMARY) ───────────
+// Batch fetch via RapidAPI — CORS-enabled, supports .AX symbols
+async function rapidApiBatch(syms) {
+  if (!RAPIDAPI_KEY) return [];
+  try {
+    const url = `https://${RAPIDAPI_HOST}/api/v1/markets/stock/quotes?ticker=${syms.join(',')}`;
+    const r = await fetch(url, {
+      signal: mkTimeout(15000),
+      headers: {
+        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-host': RAPIDAPI_HOST,
+      }
+    });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const results = d?.body || d?.data || d;
+    if (!Array.isArray(results) || !results.length) throw new Error('empty');
+    return results.map(s => {
+      const sym = s.symbol || s.ticker;
+      const price = s.regularMarketPrice?.raw ?? s.regularMarketPrice ?? s.price;
+      if (!price || price <= 0) return null;
+      return normaliseStock(sym, {
+        price,
+        name: s.shortName || s.longName || s.name,
+        changePercentage: s.regularMarketChangePercent?.raw ?? s.regularMarketChangePercent ?? s.changesPercentage ?? 0,
+        yearHigh: s.fiftyTwoWeekHigh?.raw ?? s.fiftyTwoWeekHigh,
+        yearLow: s.fiftyTwoWeekLow?.raw ?? s.fiftyTwoWeekLow,
+        marketCap: s.marketCap?.raw ?? s.marketCap,
+        volume: s.regularMarketVolume?.raw ?? s.regularMarketVolume ?? s.volume,
+      });
+    }).filter(Boolean);
+  } catch(e) { console.warn('RapidAPI fetch failed:', e.message); return []; }
+}
+
 // ── YAHOO FINANCE (FALLBACK) ───────────────────────
 function yhProxies(url) {
   const u2 = url.replace('query1.finance', 'query2.finance');
@@ -624,17 +663,21 @@ async function stooqBatch(syms, market) {
   try { return await Promise.any(proxies.map(attempt)); } catch { return []; }
 }
 
-// ── UNIFIED FETCH: FMP (US) / Yahoo+Stooq (ASX) ───
+// ── UNIFIED FETCH ───────────────────────────────────
+// US: FMP (direct) → Yahoo (proxy) → Stooq
+// ASX: RapidAPI Yahoo (direct) → Yahoo (proxy) → Stooq
 async function fetchStockData(syms, market) {
   let data = [];
 
-  // 1. For US stocks: try FMP first (direct CORS, no proxy needed)
+  // 1. Primary source (direct CORS, no proxy needed)
   if (market === 'us') {
     data = await fmpParallel(syms);
-    if (data.length >= syms.length * 0.8) return data;
+  } else if (market === 'asx') {
+    data = await rapidApiBatch(syms);
   }
+  if (data.length >= syms.length * 0.8) return data;
 
-  // 2. Yahoo batch for anything still missing (all markets)
+  // 2. Yahoo batch via CORS proxies for anything missing
   const got1 = new Set(data.map(s => s.symbol));
   const missing1 = syms.filter(s => !got1.has(s));
   if (missing1.length) {
@@ -642,7 +685,7 @@ async function fetchStockData(syms, market) {
     data = [...data, ...yhData];
   }
 
-  // 3. Individual fetches for still-missing (FMP for US, Yahoo for ASX)
+  // 3. Individual fetches for still-missing
   const got2 = new Set(data.map(s => s.symbol));
   const missing2 = syms.filter(s => !got2.has(s));
   if (missing2.length) {
@@ -666,10 +709,17 @@ async function fetchStockData(syms, market) {
   return data;
 }
 
-// Single stock lookup (for "Add Stock" search) — tries FMP then Yahoo
+// Single stock lookup (for "Add Stock" search)
 async function lookupSingleStock(sym) {
+  // Try FMP first (US stocks)
   const fmp = await fmpSingle(sym);
   if (fmp) return fmp;
+  // Try RapidAPI (ASX stocks)
+  if (sym.includes('.AX') && RAPIDAPI_KEY) {
+    const rap = await rapidApiBatch([sym]);
+    if (rap.length) return rap[0];
+  }
+  // Fallback to Yahoo proxy
   return await yhSingle(sym);
 }
 
@@ -757,7 +807,7 @@ async function fetchUSCustomFresh(syms, cacheKey, storeKey, _render) {
 const fetchAllStocks = fetchUS; // alias for all pages that call fetchAllStocks
 
 // ── ASX STOCKS ───────────────────────────────────────
-const ASX_CACHE_KEY = 'tsp_asx_cache';  const ASX_CACHE_TTL = 5  * 60 * 1000;
+const ASX_CACHE_KEY = 'tsp_asx_cache';  const ASX_CACHE_TTL = 15 * 60 * 1000; // 15 min to conserve RapidAPI calls
 const ASX_STORE_KEY = 'tsp_asx_store';  const ASX_STORE_TTL = 30 * 60 * 1000;
 
 async function fetchASX() {
