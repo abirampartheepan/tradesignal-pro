@@ -28,6 +28,7 @@ const STOCK_NAMES = {
   'WBC.AX':'Westpac Banking','NAB.AX':'National Aust. Bank','WES.AX':'Wesfarmers','MQG.AX':'Macquarie Group',
   'RIO.AX':'Rio Tinto','TLS.AX':'Telstra','FMG.AX':'Fortescue','WOW.AX':'Woolworths Group',
   'GMG.AX':'Goodman Group','REA.AX':'REA Group','XRO.AX':'Xero',
+  '360.AX':'Life360',
 };
 
 const CHART_COLORS = ['#3b82c4','#2a9d5c','#c0392b','#c49a2e','#8b5cf6','#e97316','#06b6d4','#ec4899','#84cc16','#f43f5e','#a855f7','#14b8a6','#fb923c','#a3e635','#e879f9'];
