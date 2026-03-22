@@ -920,12 +920,24 @@ async function fetchStockData(syms, market) {
 // Direct ASX API lookup (free, no key needed)
 async function asxDirectLookup(sym) {
   const code = sym.replace('.AX', '');
-  try {
-    const r = await fetch(`https://asx.api.markitdigital.com/asx-research/1.0/companies/${code}/header`, { signal: mkTimeout(8000) });
-    if (!r.ok) return null;
-    const json = await r.json();
+  const asxUrl = `https://asx.api.markitdigital.com/asx-research/1.0/companies/${code}/header`;
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(asxUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(asxUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(asxUrl)}`,
+  ];
+  const attempt = async (p) => {
+    const r = await fetch(p, { signal: mkTimeout(8000) });
+    if (!r.ok) throw new Error(r.status);
+    let json;
+    if (p.includes('allorigins')) {
+      const wrapper = await r.json();
+      json = JSON.parse(wrapper.contents);
+    } else {
+      json = await r.json();
+    }
     const d = json?.data;
-    if (!d || !d.priceLast) return null;
+    if (!d || !d.priceLast) throw new Error('no data');
     return normaliseStock(sym, {
       price: d.priceLast,
       name: STOCK_NAMES[sym] || d.displayName || code,
@@ -933,7 +945,8 @@ async function asxDirectLookup(sym) {
       marketCap: d.marketCap || null,
       volume: d.volume || null,
     });
-  } catch { return null; }
+  };
+  try { return await Promise.any(proxies.map(attempt)); } catch { return null; }
 }
 
 async function lookupSingleStock(sym) {
