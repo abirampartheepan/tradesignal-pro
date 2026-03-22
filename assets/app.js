@@ -1125,6 +1125,7 @@ function renderStocks(type, data, elId) {
 
   // Compute all rows first (needed for detectChanges even if no table on this page)
   const allRows = data.map(s => {
+    if (STOCK_NAMES[s.symbol]) s.shortName = STOCK_NAMES[s.symbol];
     const c24 = s.regularMarketChangePercent || 0;
     const hi = s.fiftyTwoWeekHigh || s.regularMarketPrice;
     const lo = s.fiftyTwoWeekLow  || s.regularMarketPrice;
