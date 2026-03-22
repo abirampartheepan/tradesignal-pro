@@ -59,7 +59,12 @@ function renderWatchlist() {
     const coin = TSP.cryptoData.find(c => c.symbol.toUpperCase() === sym);
     if (coin) {
       const sp = coin.sparkline_in_7d?.price || [];
-      const rsi = calcRSI(sp);
+      let rsi = calcRSI(sp);
+      // Fallback RSI from price change if no sparkline data
+      if ((rsi === undefined || rsi === null || isNaN(rsi)) && coin.price_change_percentage_24h != null) {
+        const c24 = coin.price_change_percentage_24h || 0;
+        rsi = cl(50 + (c24 * 2), 5, 95);
+      }
       const sig = getSignal(rsi, coin.price_change_percentage_24h, coin.price_change_percentage_7d_in_currency);
       items.push({ sym, name: coin.name, type:'Crypto', price: coin.current_price, audPrice: coin.current_price*TSP.audRate, c24: coin.price_change_percentage_24h, rsi, sig, image: coin.image });
       return;

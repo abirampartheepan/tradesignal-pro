@@ -677,15 +677,24 @@ async function fetchSparkline(sym) {
   if (cache[sym] && Date.now() - cache[sym].ts < SPARK_CACHE_TTL) return cache[sym].prices;
 
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=7d`;
+  const url2 = url.replace('query1.finance', 'query2.finance');
   const proxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(url2)}`,
     `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url2)}`,
+    `https://corsproxy.org/?${encodeURIComponent(url2)}`,
   ];
   const attempt = async p => {
     const r = await fetch(p, { signal: mkTimeout(8000) });
     if (!r.ok) throw new Error(r.status);
-    const d = await r.json();
+    let d;
+    if (p.includes('allorigins.win/get')) {
+      const wrapper = await r.json();
+      d = JSON.parse(wrapper.contents);
+    } else {
+      d = await r.json();
+    }
     const closes = d?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
     if (!closes?.length) throw new Error('no data');
     return closes.filter(c => c != null && c > 0);
