@@ -453,37 +453,179 @@ async function fetchAUD() {
 }
 
 // ── FETCH CRYPTO ────────────────────────────────────
+const CRYPTO_CACHE_KEY = 'tsp_crypto_cache'; const CRYPTO_CACHE_TTL = 5 * 60 * 1000;
+const CRYPTO_STORE_KEY = 'tsp_crypto_store'; const CRYPTO_STORE_TTL = 30 * 60 * 1000;
+
+const TOP15_IDS = ['bitcoin','ethereum','tether','binancecoin','solana','ripple','usd-coin','staked-ether','dogecoin','cardano','tron','avalanche-2','chainlink','polkadot','matic-network'];
+
+function cryptoCommit(data) {
+  TSP.cryptoData = data;
+  const payload = JSON.stringify({ data, ts: Date.now() });
+  try { sessionStorage.setItem(CRYPTO_CACHE_KEY, payload); } catch {}
+  try { localStorage.setItem(CRYPTO_STORE_KEY, payload); } catch {}
+  if (typeof renderCrypto === 'function') renderCrypto();
+  if (typeof updateStats === 'function') updateStats();
+  if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
+}
+
+// Fetch top coins from CryptoCompare (free, no key, CORS-friendly, generous rate limits)
+async function fetchCryptoCompare() {
+  try {
+    const r = await fetch('https://min-api.cryptocompare.com/data/top/mktcapfull?limit=15&tsym=USD', { signal: mkTimeout(10000) });
+    if (!r.ok) return [];
+    const json = await r.json();
+    if (!json?.Data?.length) return [];
+    return json.Data.map((d, i) => {
+      const raw = d.RAW?.USD || {};
+      const info = d.CoinInfo || {};
+      return {
+        id: info.Name?.toLowerCase() || '',
+        symbol: (info.Name || '').toLowerCase(),
+        name: info.FullName || info.Name || '',
+        image: info.ImageUrl ? 'https://www.cryptocompare.com' + info.ImageUrl : '',
+        current_price: raw.PRICE || 0,
+        market_cap: raw.MKTCAP || 0,
+        market_cap_rank: i + 1,
+        total_volume: raw.TOTALVOLUME24HTO || 0,
+        price_change_percentage_24h: raw.CHANGEPCT24HOUR || 0,
+        price_change_percentage_7d_in_currency: 0,
+        sparkline_in_7d: { price: [] },
+        high_24h: raw.HIGH24HOUR || 0,
+        low_24h: raw.LOW24HOUR || 0,
+      };
+    });
+  } catch { return []; }
+}
+
 async function fetchCrypto() {
+  // 1. Show cached data instantly
+  try {
+    const { data, ts } = JSON.parse(sessionStorage.getItem(CRYPTO_CACHE_KEY) || '{}');
+    if (Date.now() - ts < CRYPTO_CACHE_TTL && data?.length) {
+      TSP.cryptoData = data;
+      if (typeof renderCrypto === 'function') renderCrypto();
+      if (typeof updateStats === 'function') updateStats();
+      fetchCustomCrypto();
+      return;
+    }
+  } catch {}
+  // Check localStorage fallback
+  try {
+    const { data, ts } = JSON.parse(localStorage.getItem(CRYPTO_STORE_KEY) || '{}');
+    if (Date.now() - ts < CRYPTO_STORE_TTL && data?.length) {
+      TSP.cryptoData = data;
+      if (typeof renderCrypto === 'function') renderCrypto();
+      if (typeof updateStats === 'function') updateStats();
+    }
+  } catch {}
+
+  // 2. Try CoinGecko batch endpoint first (best data — sparklines + 7d change)
   try {
     const url = 'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=15&page=1&sparkline=true&price_change_percentage=24h%2C7d';
-    const r = await fetch(url);
+    const r = await fetch(url, { signal: mkTimeout(10000) });
     if (!r.ok) throw new Error(r.status);
-    TSP.cryptoData = await r.json();
-    if (typeof renderCrypto === 'function') renderCrypto();
-    if (typeof updateStats === 'function') updateStats();
-    if (typeof refreshPortfolioPrices === 'function') refreshPortfolioPrices();
-    fetchCustomCrypto(); // load any user-added coins in background
-  } catch(e) {
-    const el = document.getElementById('cryptoTable');
-    if (el) el.innerHTML = '<div class="loading" style="color:var(--red)">⚠ CoinGecko rate limited — retrying on next refresh</div>';
+    const coins = await r.json();
+    if (coins?.length) {
+      cryptoCommit(coins);
+      fetchCustomCrypto();
+      return;
+    }
+  } catch {}
+
+  // 3. CoinGecko rate limited — use CryptoCompare as fallback (reliable, free)
+  const ccCoins = await fetchCryptoCompare();
+  if (ccCoins.length >= 10) {
+    cryptoCommit(ccCoins);
+    fetchCustomCrypto();
+    return;
   }
+
+  // 4. Both failed — show error
+  if (!TSP.cryptoData.length) {
+    const el = document.getElementById('cryptoTable');
+    if (el) el.innerHTML = '<div class="loading" style="color:var(--red)">⚠ Crypto data unavailable — retrying on next refresh</div>';
+  }
+}
+
+// CoinGecko ID → CryptoCompare ticker mapping
+const CG_TO_CC = {
+  'bitcoin':'BTC','ethereum':'ETH','tether':'USDT','binancecoin':'BNB','solana':'SOL',
+  'ripple':'XRP','usd-coin':'USDC','staked-ether':'STETH','dogecoin':'DOGE','cardano':'ADA',
+  'tron':'TRX','avalanche-2':'AVAX','chainlink':'LINK','polkadot':'DOT','matic-network':'MATIC',
+  'hedera-hashgraph':'HBAR','shiba-inu':'SHIB','litecoin':'LTC','uniswap':'UNI','near':'NEAR',
+};
+
+// Single coin fetch — tries CoinGecko first, falls back to CryptoCompare
+async function cgSingle(id) {
+  // Try CoinGecko
+  try {
+    const r = await fetch(`https://api.coingecko.com/api/v3/coins/${id}?localization=false&tickers=false&community_data=false&developer_data=false&sparkline=true`, { signal: mkTimeout(8000) });
+    if (r.ok) {
+      const d = await r.json();
+      return {
+        id: d.id, symbol: d.symbol, name: d.name,
+        image: d.image?.small || d.image?.thumb || '',
+        current_price: d.market_data?.current_price?.usd || 0,
+        market_cap: d.market_data?.market_cap?.usd || 0,
+        market_cap_rank: d.market_cap_rank || 999,
+        total_volume: d.market_data?.total_volume?.usd || 0,
+        price_change_percentage_24h: d.market_data?.price_change_percentage_24h || 0,
+        price_change_percentage_7d_in_currency: d.market_data?.price_change_percentage_7d || 0,
+        sparkline_in_7d: d.market_data?.sparkline_7d || { price: [] },
+        high_24h: d.market_data?.high_24h?.usd || 0,
+        low_24h: d.market_data?.low_24h?.usd || 0,
+      };
+    }
+  } catch {}
+  // Fallback: CryptoCompare by symbol (map CoinGecko ID to ticker)
+  const ticker = CG_TO_CC[id] || id.toUpperCase();
+  return await ccSingle(ticker);
+}
+
+// Fetch single coin from CryptoCompare by symbol (e.g. "BTC", "HBAR")
+async function ccSingle(sym) {
+  try {
+    const r = await fetch(`https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${encodeURIComponent(sym.toUpperCase())}&tsyms=USD`, { signal: mkTimeout(8000) });
+    if (!r.ok) return null;
+    const json = await r.json();
+    const raw = json?.RAW?.[sym.toUpperCase()]?.USD;
+    if (!raw) return null;
+    // Get full coin name
+    let coinName = sym.toUpperCase();
+    try {
+      const nr = await fetch(`https://min-api.cryptocompare.com/data/all/coinlist?fsym=${encodeURIComponent(sym.toUpperCase())}`, { signal: mkTimeout(5000) });
+      if (nr.ok) { const nd = await nr.json(); coinName = nd?.Data?.[sym.toUpperCase()]?.CoinName || coinName; }
+    } catch {}
+    return {
+      id: sym.toLowerCase(),
+      symbol: sym.toLowerCase(),
+      name: coinName,
+      image: raw.IMAGEURL ? 'https://www.cryptocompare.com' + raw.IMAGEURL : '',
+      current_price: raw.PRICE || 0,
+      market_cap: raw.MKTCAP || 0,
+      market_cap_rank: 999,
+      total_volume: raw.TOTALVOLUME24HTO || 0,
+      price_change_percentage_24h: raw.CHANGEPCT24HOUR || 0,
+      price_change_percentage_7d_in_currency: 0,
+      sparkline_in_7d: { price: [] },
+      high_24h: raw.HIGH24HOUR || 0,
+      low_24h: raw.LOW24HOUR || 0,
+    };
+  } catch { return null; }
 }
 
 async function fetchCustomCrypto() {
   const ids = getCustomSyms('crypto');
   if (!ids.length) return;
-  try {
-    const r = await fetch(
-      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids.join(',')}&sparkline=true&price_change_percentage=24h%2C7d`,
-      { signal: mkTimeout(10000) }
-    );
-    if (!r.ok) return;
-    const coins = await r.json();
-    if (!coins?.length) return;
-    const newIds = new Set(coins.map(c => c.id));
-    TSP.cryptoData = [...TSP.cryptoData.filter(c => !newIds.has(c.id)), ...coins];
-    if (typeof renderCrypto === 'function') renderCrypto();
-  } catch {}
+  const existing = new Set(TSP.cryptoData.map(c => c.id));
+  const missing = ids.filter(id => !existing.has(id));
+  if (!missing.length) return;
+  const results = await Promise.all(missing.map(id => cgSingle(id)));
+  const coins = results.filter(Boolean);
+  if (!coins.length) return;
+  const newIds = new Set(coins.map(c => c.id));
+  TSP.cryptoData = [...TSP.cryptoData.filter(c => !newIds.has(c.id)), ...coins];
+  if (typeof renderCrypto === 'function') renderCrypto();
 }
 
 // ── STOCK DATA FETCH LAYER ──────────────────────────

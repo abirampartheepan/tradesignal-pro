@@ -64,7 +64,7 @@ function renderWatchlist() {
       items.push({ sym, name: coin.name, type:'Crypto', price: coin.current_price, audPrice: coin.current_price*TSP.audRate, c24: coin.price_change_percentage_24h, rsi, sig, image: coin.image });
       return;
     }
-    const us = TSP.usData.find(s => s.symbol === sym);
+    const us = TSP.usData.find(s => s.symbol === sym) || TSP.usCustomData.find(s => s.symbol === sym);
     if (us) {
       const c24 = us.regularMarketChangePercent||0;
       const hi=us.fiftyTwoWeekHigh||us.regularMarketPrice, lo=us.fiftyTwoWeekLow||us.regularMarketPrice;
@@ -72,7 +72,7 @@ function renderWatchlist() {
       items.push({ sym, name: us.shortName||sym, type:'US Stock', price: us.regularMarketPrice, audPrice: us.regularMarketPrice*TSP.audRate, c24, rsi, sig: getSignal(rsi,c24,null) });
       return;
     }
-    const asx = TSP.asxData.find(s => s.symbol === sym);
+    const asx = TSP.asxData.find(s => s.symbol === sym) || TSP.asxCustomData.find(s => s.symbol === sym);
     if (asx) {
       const c24 = asx.regularMarketChangePercent||0;
       const hi=asx.fiftyTwoWeekHigh||asx.regularMarketPrice, lo=asx.fiftyTwoWeekLow||asx.regularMarketPrice;
@@ -112,6 +112,42 @@ function renderWatchlist() {
   </table>`;
 }
 
+// Fetch any watchlisted symbols that aren't in the standard/custom data arrays
+async function fetchMissingWatchlistItems() {
+  const list = getWatchlist();
+  if (!list.length) return;
+  const allCrypto = TSP.cryptoData.map(c => c.symbol.toUpperCase());
+  const allUS = [...TSP.usData, ...TSP.usCustomData].map(s => s.symbol);
+  const allASX = [...TSP.asxData, ...TSP.asxCustomData].map(s => s.symbol);
+  const missing = list.filter(sym => !allCrypto.includes(sym) && !allUS.includes(sym) && !allASX.includes(sym));
+  if (!missing.length) return;
+
+  for (const sym of missing) {
+    // ASX stocks end in .AX
+    if (sym.includes('.AX')) {
+      const stock = await lookupSingleStock(sym);
+      if (stock) {
+        TSP.asxCustomData = [...TSP.asxCustomData.filter(s => s.symbol !== sym), stock];
+        continue;
+      }
+    }
+
+    // Try as US stock via FMP/Yahoo
+    const usStock = await lookupSingleStock(sym);
+    if (usStock) {
+      TSP.usCustomData = [...TSP.usCustomData.filter(s => s.symbol !== sym), usStock];
+      continue;
+    }
+
+    // Try as crypto via CryptoCompare (reliable, no rate limit issues)
+    const coin = await ccSingle(sym);
+    if (coin) {
+      TSP.cryptoData = [...TSP.cryptoData.filter(c => c.symbol.toUpperCase() !== sym.toUpperCase()), coin];
+      continue;
+    }
+  }
+}
+
 let countdownTimer;
 function startCountdown() {
   clearInterval(countdownTimer); TSP.countdown=REFRESH_SEC;
@@ -120,14 +156,16 @@ function startCountdown() {
 
 async function refreshPage() {
   const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
-  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX(),fetchUSCustom(),fetchASXCustom()]);
+  await fetchMissingWatchlistItems();
   renderWatchlist(); if(btn)btn.textContent='⟳ Refresh'; startCountdown();
 }
 
 async function bootDashboard() {
   document.getElementById('appShell').style.display='flex';
   renderWatchlist();
-  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX(),fetchUSCustom(),fetchASXCustom()]);
+  await fetchMissingWatchlistItems();
   renderWatchlist();
   startCountdown();
 }
