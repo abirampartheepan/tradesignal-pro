@@ -861,7 +861,7 @@ async function stooqBatch(syms, market) {
 
 // ── UNIFIED FETCH ───────────────────────────────────
 // US: FMP (direct) → Yahoo (proxy) → Stooq
-// ASX: RapidAPI Yahoo (direct) → Yahoo (proxy) → Stooq
+// ASX: RapidAPI Yahoo → ASX Direct API → Yahoo (proxy) → Stooq
 async function fetchStockData(syms, market) {
   let data = [];
 
@@ -872,6 +872,17 @@ async function fetchStockData(syms, market) {
     data = await rapidApiBatch(syms);
   }
   if (data.length >= syms.length * 0.8) return data;
+
+  // 1b. ASX direct API fallback for missing ASX stocks
+  if (market === 'asx') {
+    const gotAsx = new Set(data.map(s => s.symbol));
+    const missingAsx = syms.filter(s => !gotAsx.has(s));
+    if (missingAsx.length) {
+      const asxResults = await Promise.all(missingAsx.map(s => asxDirectLookup(s)));
+      data = [...data, ...asxResults.filter(Boolean)];
+    }
+    if (data.length >= syms.length * 0.8) return data;
+  }
 
   // 2. Yahoo batch via CORS proxies for anything missing
   const got1 = new Set(data.map(s => s.symbol));
@@ -906,15 +917,39 @@ async function fetchStockData(syms, market) {
 }
 
 // Single stock lookup (for "Add Stock" search)
+// Direct ASX API lookup (free, no key needed)
+async function asxDirectLookup(sym) {
+  const code = sym.replace('.AX', '');
+  try {
+    const r = await fetch(`https://asx.api.markitdigital.com/asx-research/1.0/companies/${code}/header`, { signal: mkTimeout(8000) });
+    if (!r.ok) return null;
+    const json = await r.json();
+    const d = json?.data;
+    if (!d || !d.priceLast) return null;
+    return normaliseStock(sym, {
+      price: d.priceLast,
+      name: STOCK_NAMES[sym] || d.displayName || code,
+      changesPercentage: d.priceChangePercent || 0,
+      marketCap: d.marketCap || null,
+      volume: d.volume || null,
+    });
+  } catch { return null; }
+}
+
 async function lookupSingleStock(sym) {
-  // Try FMP first (US stocks)
+  // ASX stocks — try direct ASX API first
+  if (sym.includes('.AX')) {
+    const asx = await asxDirectLookup(sym);
+    if (asx) return asx;
+    if (RAPIDAPI_KEY) {
+      const rap = await rapidApiBatch([sym]);
+      if (rap.length) return rap[0];
+    }
+    return await yhSingle(sym);
+  }
+  // US stocks — try FMP first
   const fmp = await fmpSingle(sym);
   if (fmp) return fmp;
-  // Try RapidAPI (ASX stocks)
-  if (sym.includes('.AX') && RAPIDAPI_KEY) {
-    const rap = await rapidApiBatch([sym]);
-    if (rap.length) return rap[0];
-  }
   // Fallback to Yahoo proxy
   return await yhSingle(sym);
 }
