@@ -1125,6 +1125,7 @@ function renderStocks(type, data, elId) {
         <td>
           <div style="display:flex;align-items:center;gap:7px">
             <button class="star-btn ${isWatched(s.symbol)?'active':''}" data-sym="${s.symbol}" onclick="event.stopPropagation();toggleWatchlist('${s.symbol}')" title="${isWatched(s.symbol)?'Remove from watchlist':'Add to watchlist'}">★</button>
+            <img src="https://assets.parqet.com/logos/symbol/${s.symbol}" width="24" height="24" style="border-radius:50%;background:var(--s2)" onerror="this.style.display='none'">
             <div><div class="asset-name">${s.shortName || s.symbol}</div><div class="asset-sub">${s.symbol}</div></div>
           </div>
         </td>
