@@ -154,7 +154,19 @@ function loadPortfolio() {
       const qtyEl = document.getElementById(`pQty-${id}`);
       const buyEl = document.getElementById(`pBuy-${id}`);
       const dateEl = document.getElementById(`pDate-${id}`);
-      if (symEl) symEl.value = item.sym;
+      if (symEl) {
+        // Store intended symbol so it survives select rebuilds
+        // (crypto options may not exist yet at boot time)
+        symEl._intendedValue = item.sym;
+        symEl.value = item.sym;
+        // If the value didn't stick (no matching option yet), inject a temporary option
+        if (symEl.value !== item.sym) {
+          const tmp = document.createElement('option');
+          tmp.value = item.sym; tmp.textContent = item.sym + ' (loading…)';
+          symEl.appendChild(tmp);
+          symEl.value = item.sym;
+        }
+      }
       if (qtyEl) qtyEl.value = item.qty;
       if (buyEl) buyEl.value = item.buyP;
       if (dateEl && item.date) dateEl.value = item.date;
@@ -215,7 +227,17 @@ function buildPortOptions() {
 function refreshPortfolioSelects() {
   const opts = buildPortOptions();
   document.querySelectorAll('[id^="pSym-"]').forEach(sel => {
-    const cur = sel.value; sel.innerHTML = opts; sel.value = cur;
+    const cur = sel._intendedValue || sel.value;
+    sel.innerHTML = opts;
+    sel.value = cur;
+    // If value still doesn't match (e.g. custom-added crypto not in options), inject option
+    if (sel.value !== cur && cur) {
+      const tmp = document.createElement('option');
+      tmp.value = cur; tmp.textContent = cur;
+      sel.appendChild(tmp);
+      sel.value = cur;
+    }
+    sel._intendedValue = cur;
   });
 }
 
