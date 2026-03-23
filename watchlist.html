@@ -127,30 +127,19 @@ async function fetchMissingWatchlistItems() {
   const missing = list.filter(sym => !allCrypto.includes(sym) && !allUS.includes(sym) && !allASX.includes(sym));
   if (!missing.length) return;
 
-  for (const sym of missing) {
-    // ASX stocks end in .AX
+  // Fetch all missing items in parallel
+  await Promise.all(missing.map(async sym => {
     if (sym.includes('.AX')) {
       const stock = await lookupSingleStock(sym);
-      if (stock) {
-        TSP.asxCustomData = [...TSP.asxCustomData.filter(s => s.symbol !== sym), stock];
-        continue;
-      }
+      if (stock) { TSP.asxCustomData = [...TSP.asxCustomData.filter(s => s.symbol !== sym), stock]; return; }
     }
-
-    // Try as US stock via FMP/Yahoo
+    // Try as US stock
     const usStock = await lookupSingleStock(sym);
-    if (usStock) {
-      TSP.usCustomData = [...TSP.usCustomData.filter(s => s.symbol !== sym), usStock];
-      continue;
-    }
-
-    // Try as crypto via CryptoCompare (reliable, no rate limit issues)
+    if (usStock) { TSP.usCustomData = [...TSP.usCustomData.filter(s => s.symbol !== sym), usStock]; return; }
+    // Try as crypto
     const coin = await ccSingle(sym);
-    if (coin) {
-      TSP.cryptoData = [...TSP.cryptoData.filter(c => c.symbol.toUpperCase() !== sym.toUpperCase()), coin];
-      continue;
-    }
-  }
+    if (coin) { TSP.cryptoData = [...TSP.cryptoData.filter(c => c.symbol.toUpperCase() !== sym.toUpperCase()), coin]; }
+  }));
 }
 
 let countdownTimer;
@@ -162,16 +151,20 @@ function startCountdown() {
 async function refreshPage() {
   const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
   await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX(),fetchUSCustom(),fetchASXCustom()]);
+  renderWatchlist();
   await fetchMissingWatchlistItems();
   renderWatchlist(); if(btn)btn.textContent='⟳ Refresh'; startCountdown();
 }
 
 async function bootDashboard() {
   document.getElementById('appShell').style.display='flex';
+  // Render immediately with whatever we have, then progressively update
   renderWatchlist();
+  // Fire all fetches in parallel, render as soon as main data arrives
   await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX(),fetchUSCustom(),fetchASXCustom()]);
-  await fetchMissingWatchlistItems();
   renderWatchlist();
+  // Then fetch any remaining missing items in parallel and re-render
+  fetchMissingWatchlistItems().then(() => renderWatchlist());
   startCountdown();
 }
 
