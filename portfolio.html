@@ -419,6 +419,8 @@ function startCountdown() {
 async function refreshPage() {
   const btn=document.getElementById('refreshBtn'); if(btn)btn.textContent='⟳ Loading…';
   await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  refreshPortfolioPrices();
+  calcPortfolio(true);
   if(btn)btn.textContent='⟳ Refresh'; startCountdown();
 }
 
@@ -426,6 +428,8 @@ async function bootDashboard() {
   document.getElementById('appShell').style.display='flex';
   loadPortfolio();
   await Promise.all([fetchAUD(),fetchCrypto(),fetchAllStocks(),fetchASX()]);
+  refreshPortfolioPrices();
+  calcPortfolio(true);
   startCountdown();
 }
 
