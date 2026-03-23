@@ -384,7 +384,7 @@ function calcPortfolio(silent=false) {
     TSP.pieChart.update('none');
   } else {
     const ctx=document.getElementById('pieChart').getContext('2d');
-    TSP.pieChart=new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:values,backgroundColor:colors,borderColor:'var(--s1)',borderWidth:2,hoverOffset:6}]},options:{responsive:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const p=(c.parsed/totVal*100).toFixed(1);return ` ${c.label}: A$${f2(c.parsed)} (${p}%)`;}}}}}});
+    TSP.pieChart=new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data:values,backgroundColor:colors,borderColor:'var(--s1)',borderWidth:2,hoverOffset:6}]},options:{responsive:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{const total=c.dataset.data.reduce((a,b)=>a+b,0);const p=total>0?(c.parsed/total*100).toFixed(1):'0.0';return ` ${c.label}: A$${f2(c.parsed)} (${p}%)`;}}}}}});
   }
   document.getElementById('portLegend').innerHTML = items.map((it,i)=>{
     const pct=(it.val/totVal*100).toFixed(1), ret=it.buyP>0?((it.curP-it.buyP)/it.buyP*100):null;
