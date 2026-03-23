@@ -74,7 +74,7 @@ function renderWatchlist() {
       const c24 = us.regularMarketChangePercent||0;
       const hi=us.fiftyTwoWeekHigh||us.regularMarketPrice, lo=us.fiftyTwoWeekLow||us.regularMarketPrice;
       const rsi = cl(((hi-lo)>0?((us.regularMarketPrice-lo)/(hi-lo))*100:50)*0.7+(c24>0?10:-10)+15,5,95);
-      items.push({ sym, name: us.shortName||sym, type:'US Stock', price: us.regularMarketPrice, audPrice: us.regularMarketPrice*TSP.audRate, c24, rsi, sig: getSignal(rsi,c24,null) });
+      items.push({ sym, name: us.shortName||sym, type:'US Stock', price: us.regularMarketPrice, audPrice: us.regularMarketPrice*TSP.audRate, c24, rsi, sig: getSignal(rsi,c24,null), image: `https://assets.parqet.com/logos/symbol/${sym}` });
       return;
     }
     const asx = TSP.asxData.find(s => s.symbol === sym) || TSP.asxCustomData.find(s => s.symbol === sym);
@@ -82,7 +82,7 @@ function renderWatchlist() {
       const c24 = asx.regularMarketChangePercent||0;
       const hi=asx.fiftyTwoWeekHigh||asx.regularMarketPrice, lo=asx.fiftyTwoWeekLow||asx.regularMarketPrice;
       const rsi = cl(((hi-lo)>0?((asx.regularMarketPrice-lo)/(hi-lo))*100:50)*0.7+(c24>0?10:-10)+15,5,95);
-      items.push({ sym, name: asx.shortName||sym, type:'ASX', price: asx.regularMarketPrice, audPrice: asx.regularMarketPrice, c24, rsi, sig: getSignal(rsi,c24,null) });
+      items.push({ sym, name: asx.shortName||sym, type:'ASX', price: asx.regularMarketPrice, audPrice: asx.regularMarketPrice, c24, rsi, sig: getSignal(rsi,c24,null), image: `https://assets.parqet.com/logos/symbol/${sym}` });
       return;
     }
     items.push({ sym, name: STOCK_NAMES[sym]||sym, type:'—', price: null, audPrice: null, c24: null, rsi: null, sig:{s:'—',why:'Loading…',str:0} });
