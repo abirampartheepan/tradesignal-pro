@@ -127,18 +127,23 @@ async function fetchMissingWatchlistItems() {
   const missing = list.filter(sym => !allCrypto.includes(sym) && !allUS.includes(sym) && !allASX.includes(sym));
   if (!missing.length) return;
 
-  // Fetch all missing items in parallel
+  // Fetch all missing items in parallel — try crypto first (fast), then stocks
   await Promise.all(missing.map(async sym => {
+    // ASX stocks always end in .AX
     if (sym.includes('.AX')) {
       const stock = await lookupSingleStock(sym);
-      if (stock) { TSP.asxCustomData = [...TSP.asxCustomData.filter(s => s.symbol !== sym), stock]; return; }
+      if (stock) { TSP.asxCustomData = [...TSP.asxCustomData.filter(s => s.symbol !== sym), stock]; }
+      return;
     }
-    // Try as US stock
-    const usStock = await lookupSingleStock(sym);
-    if (usStock) { TSP.usCustomData = [...TSP.usCustomData.filter(s => s.symbol !== sym), usStock]; return; }
-    // Try as crypto
+    // Try crypto first (CryptoCompare is fast and reliable)
     const coin = await ccSingle(sym);
-    if (coin) { TSP.cryptoData = [...TSP.cryptoData.filter(c => c.symbol.toUpperCase() !== sym.toUpperCase()), coin]; }
+    if (coin && coin.current_price > 0) {
+      TSP.cryptoData = [...TSP.cryptoData.filter(c => c.symbol.toUpperCase() !== sym.toUpperCase()), coin];
+      return;
+    }
+    // Fallback to stock lookup
+    const usStock = await lookupSingleStock(sym);
+    if (usStock) { TSP.usCustomData = [...TSP.usCustomData.filter(s => s.symbol !== sym), usStock]; }
   }));
 }
 
